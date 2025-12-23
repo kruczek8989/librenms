@@ -83,14 +83,14 @@
         rowCount: [{{ $range }}, 25, 50, 100, 250, -1],
         formatters: {
             "browserTime": function (column, row) {
-                let timezone =
-                @json($timezone)
+                    let timezone = @json($timezone);
 
-                if (timezone) {
-                    return 'row.timestamp;';
+                    if (timezone) {
+                        return row.timestamp;
+                    }
+
+                    return moment.parseZone(row.timestamp).local().format("YYYY-MM-DD HH:mm:ss");
                 }
-                return 'moment.parseZone(row.timestamp).local().format("YYYY-MM-DD HH:MM:SS");'
-            }
         },
 
     @if($show_form)
@@ -110,7 +110,7 @@
         url: "{{ route('table.graylog', ) }}",
     });
 
-    init_select2("#stream", "graylog-streams", {}, @json($stream));
-    init_select2("select#device", "device", {limit: 100}, "{{ $device->device_id }}");
+    init_select2("#stream", "graylog-streams", {}, @json($stream), 'All Streams');
+    init_select2("select#device", "device", {limit: 100}, "{{ $device->device_id }}", 'All Devices');
 </script>
 @endsection

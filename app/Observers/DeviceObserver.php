@@ -197,7 +197,7 @@ class DeviceObserver
 
         $device->ports()
             ->select(['port_id', 'device_id', 'ifIndex', 'ifName', 'ifAlias', 'ifDescr'])
-            ->chunkById(100, function ($ports) {
+            ->chunkById(100, function ($ports): void {
                 foreach ($ports as $port) {
                     $port->delete();
                 }
@@ -237,7 +237,7 @@ class DeviceObserver
         }
     }
 
-    public static function attributeChangedMessage($attribute, $value, $previous)
+    public static function attributeChangedMessage($attribute, $value, $previous): string
     {
         return trans("device.attributes.$attribute") . ': '
             . (($previous && $previous != $value) ? "$previous -> " : '')

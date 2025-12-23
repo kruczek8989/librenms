@@ -80,7 +80,7 @@ class PortsController implements DeviceTab
         Validator::validate($request->all(), [
             'page' => 'int',
             'perPage' => ['regex:/^(\d+|all)$/'],
-            'sort' => 'in:media,mac,port,traffic,speed',
+            'sort' => 'in:media,mac,port,traffic,speed,index',
             'order' => 'in:asc,desc',
             'disabled' => 'in:0,1',
             'ignored' => 'in:0,1',
@@ -290,7 +290,7 @@ class PortsController implements DeviceTab
     {
         $tabs = [
             ['name' => __('Basic'), 'url' => 'basic'],
-            ['name' => __('Detail'), 'url' => ''],
+            ['name' => __('Detail'), 'url' => 'detail'],
         ];
 
         if ($device->macs()->exists()) {
@@ -422,7 +422,7 @@ class PortsController implements DeviceTab
             };
         }
 
-        return $request->route('vars', 'detail'); // fourth segment is called vars to handle legacy urls
+        return $request->route('vars', LibrenmsConfig::get('ports_page_default')); // fourth segment is called vars to handle legacy urls
     }
 
     private function pageLinks(Request $request): array
