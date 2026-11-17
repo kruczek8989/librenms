@@ -53,38 +53,55 @@ if ($is_server || $is_client) {
     echo generate_link('General', $link_array);
 
     if ($is_client && isset($app->data['mounts']) && isset($app->data['mounts'][0])) {
-        $label = $vars['app_page'] == 'mounts'
-            ? '<span class="pagemenu-selected">Mounts</span>'
-            : 'Mounts';
-        echo ', ' . generate_link($label, $link_array, ['app_page' => 'mounts']) . "\n";
+        $label = 'Mounts';
+        $link = generate_link($label, $link_array, ['app_page' => 'mounts']);
+
+        $link = $vars['app_page'] == 'mounts'
+            ? '<span class="pagemenu-selected">' . $link . '</span>'
+            : $link;
+
+        echo ', ' . $link . "\n";
     }
 
     // showmount -a only works for NFSv2 and NFSv3... unfortunately no NFSv4 equivalent
     // this means no mount info if v4
     if ($is_server && isset($app->data['mounted_by']) && isset($app->data['mounted_by'][0])) {
-        $label = $vars['app_page'] == 'mounted_by'
-            ? '<span class="pagemenu-selected">Mounted By</span>'
-            : 'Mounted By';
-        echo ', ' . generate_link($label, $link_array, ['app_page' => 'mounted_by']) . "\n";
+        $label = 'Mounted By';
+        $link = generate_link($label, $link_array, ['app_page' => 'mounted_by']);
+
+        $link = $vars['app_page'] == 'mounted_by'
+            ? '<span class="pagemenu-selected">' . $link . '</span>'
+            : $link;
+
+        echo ', ' . $link . "\n";
     }
 
     if ($vars['app_page'] == 'mounts') {
         echo '<br>Display Options :: ';
-        $label = $vars['flat_mount_options'] == '1'
-            ? '<span class="pagemenu-selected">Flat</span>'
-            : 'Flat';
+
+        $label = 'Flat';
         $new_link_array_extra = $link_array_extra;
         $new_link_array_extra['flat_mount_options'] = $vars['flat_mount_options'] == '1'
             ? '0' : '1';
-        echo generate_link($label, $link_array, $new_link_array_extra) . ', ';
+        $link = generate_link($label, $link_array, $new_link_array_extra);
 
-        $label = $vars['show_mount_options'] == '1'
-            ? '<span class="pagemenu-selected">Show Mount Options</span>'
-            : 'Show Mount Options';
+        $link = $vars['flat_mount_options'] == '1'
+            ? '<span class="pagemenu-selected">' . $link . '</span>'
+            : $link;
+
+        echo $link . ', ';
+
+        $label = 'Show Mount Options';
         $new_link_array_extra = $link_array_extra;
         $new_link_array_extra['show_mount_options'] = $vars['show_mount_options'] == '1'
             ? '0' : '1';
-        echo generate_link($label, $link_array, $new_link_array_extra);
+        $link = generate_link($label, $link_array, $new_link_array_extra);
+
+        $link = $vars['show_mount_options'] == '1'
+            ? '<span class="pagemenu-selected">' . $link . '</span>'
+            : $link;
+
+        echo $link;
     }
     print_optionbar_end();
 }
@@ -211,12 +228,12 @@ if ($vars['app_page'] == 'general') {
                     $port = Port::with('device')->firstWhere(['port_id' => $ip_info->port_id]);
                     if (isset($port)) {
                         $new_host['raw'] = true;
-                        $new_host['data'] = $data['host'] . ' (' .
+                        $new_host['data'] = e($data['host']) . ' (' .
                             generate_device_link(['device_id' => $port->device_id]) . ', ' .
                             generate_port_link([
-                                'label' => $port->label,
+                                'label' => e($port->getLabel()),
                                 'port_id' => $port->port_id,
-                                'ifName' => $port->ifName,
+                                'ifName' => e($port->ifName),
                                 'device_id' => $port->device_id,
                             ]) . ')';
                     } else {
@@ -272,7 +289,7 @@ if ($vars['app_page'] == 'general') {
                     $path_graph_array['bg'] = 'ffffff00';
                     $path_minigraph = \LibreNMS\Util\Url::lazyGraphTag($path_graph_array);
 
-                    $new_path['data'] = \LibreNMS\Util\Url::overlibLink($path_link, $data['path'], $path_overlib_content) .
+                    $new_path['data'] = \LibreNMS\Util\Url::overlibLink($path_link, e($data['path']), $path_overlib_content) .
                         ' (' . round($storage_info['storage_perc']) . '%)' .
                         \LibreNMS\Util\Url::overlibLink($path_link, $path_minigraph, $path_overlib_content);
                     $new_path['raw'] = true;
@@ -323,12 +340,12 @@ if ($vars['app_page'] == 'general') {
                     $port = Port::with('device')->firstWhere(['port_id' => $ip_info->port_id]);
                     if (isset($port)) {
                         $new_host['raw'] = true;
-                        $new_host['data'] = $data['host'] . ' (' .
+                        $new_host['data'] = e($data['host']) . ' (' .
                             generate_device_link(['device_id' => $port->device_id]) . ', ' .
                             generate_port_link([
-                                'label' => $port->label,
+                                'label' => e($port->getLabel()),
                                 'port_id' => $port->port_id,
-                                'ifName' => $port->ifName,
+                                'ifName' => e($port->ifName),
                                 'device_id' => $port->device_id,
                             ]) . ')';
                     } else {
@@ -342,9 +359,7 @@ if ($vars['app_page'] == 'general') {
             } else {
                 $new_host = $host_cache[$data['host']];
             }
-            if (! isset($rpath_cache[$data['host']])) {
-                $rpath_cache[$data['host']] = [];
-            }
+            $rpath_cache[$data['host']] ??= [];
         }
         if (isset($data['rpath'])) {
             if (! isset($rpath_cache[$data['host']][$data['rpath']]) && isset($host_cache_device_id[$data['host']])) {
@@ -375,7 +390,7 @@ if ($vars['app_page'] == 'general') {
                     $rpath_graph_array['bg'] = 'ffffff00';
                     $rpath_minigraph = \LibreNMS\Util\Url::lazyGraphTag($rpath_graph_array);
 
-                    $new_rpath['data'] = \LibreNMS\Util\Url::overlibLink($rpath_link, $storage_info['storage_descr'], $rpath_overlib_content) .
+                    $new_rpath['data'] = \LibreNMS\Util\Url::overlibLink($rpath_link, e($storage_info['storage_descr']), $rpath_overlib_content) .
                         ' (' . round($storage_info['storage_perc']) . '%)' .
                         \LibreNMS\Util\Url::overlibLink($rpath_link, $rpath_minigraph, $rpath_overlib_content);
                     $new_rpath['raw'] = true;

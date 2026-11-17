@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\AlertRuleRequest;
+use App\Models\Alert;
+use App\Models\AlertFault;
 use App\Models\AlertRule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use LibreNMS\Alerting\QueryBuilderParser;
+use LibreNMS\Enum\AlertState;
 
 class AlertRuleController extends Controller
 {
@@ -16,6 +19,8 @@ class AlertRuleController extends Controller
      */
     public function store(AlertRuleRequest $request): JsonResponse
     {
+        $this->authorize('create', AlertRule::class);
+
         try {
             $alertRule = new AlertRule;
             $this->fillAlertRule($alertRule, $request);
@@ -40,6 +45,8 @@ class AlertRuleController extends Controller
      */
     public function show(AlertRule $alertRule): JsonResponse
     {
+        $this->authorize('view', $alertRule);
+
         $alertRule->load([
             'devices:device_id,hostname,sysName',
             'groups:id,name',
@@ -61,6 +68,8 @@ class AlertRuleController extends Controller
             'severity' => $alertRule->severity,
             'adv_query' => $alertRule->query,
             'invert_map' => $alertRule->invert_map,
+            'notify_per_entity' => $alertRule->notify_per_entity,
+            'max_entities' => $alertRule->max_entities,
         ]);
     }
 
@@ -69,6 +78,8 @@ class AlertRuleController extends Controller
      */
     public function update(AlertRuleRequest $request, AlertRule $alertRule): JsonResponse
     {
+        $this->authorize('update', $alertRule);
+
         try {
             $this->fillAlertRule($alertRule, $request);
 
@@ -95,9 +106,25 @@ class AlertRuleController extends Controller
 
     public function toggle(Request $request, AlertRule $alertRule): JsonResponse
     {
+        $this->authorize('update', $alertRule);
+
         $alertRule->disabled = ! $request->boolean('state', $alertRule->disabled);
         $success = $alertRule->save();
-        url('graphs', ['id' => 42, 'type' => 'sensor_']);
+
+        if ($success && $alertRule->disabled) {
+            AlertFault::where('rule_id', $alertRule->id)->where('open', 1)
+                ->update(['open' => 0, 'state' => AlertState::RECOVERED]);
+            Alert::where('rule_id', $alertRule->id)->get()->each(function (Alert $alert): void {
+                $info = is_array($alert->info) ? $alert->info : [];
+                unset($info['open_fault_count']);
+                $alert->info = $info;
+                $alert->update([
+                    'state' => AlertState::CLEAR,
+                    'open' => 0,
+                    'alerted' => 0,
+                ]);
+            });
+        }
 
         return response()->json(['status' => $success ? 200 : 422], $success ? 200 : 422);
     }
@@ -107,6 +134,8 @@ class AlertRuleController extends Controller
      */
     public function destroy(AlertRule $alertRule): JsonResponse
     {
+        $this->authorize('delete', $alertRule);
+
         $success = $alertRule->delete();
 
         return response()->json(['status' => $success ? 200 : 422], $success ? 200 : 422);
@@ -122,7 +151,7 @@ class AlertRuleController extends Controller
         foreach ($alertRule->devices as $device) {
             $maps[] = [
                 'id' => $device->device_id,
-                'text' => $device->displayName(),
+                'text' => $device->display,
             ];
         }
 
@@ -151,6 +180,8 @@ class AlertRuleController extends Controller
             'proc',
             'notes',
             'invert_map',
+            'notify_per_entity',
+            'max_entities',
         ]));
         $alertRule->disabled ??= false;
         $alertRule->builder = json_decode((string) $request->validated('builder_json', '[]'), true);
@@ -167,11 +198,11 @@ class AlertRuleController extends Controller
             }
         }
 
-        // extra json (no delay/interval/count/mute — those live on operations)
         $extra = $request->safe([
             'invert',
             'acknowledgement',
             'recovery',
+            'mute',
         ]);
         $extra['options'] = ['override_query' => $overrideQuery];
         $alertRule->extra = array_merge($alertRule->extra ?? [], $extra);

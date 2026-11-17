@@ -20,7 +20,8 @@ class ServicePolicy
             return false;
         }
 
-        return $this->hasGlobalPermission($user, 'view')
+        return $this->hasGlobalPermission($user, 'view', true)
+            || $this->hasGlobalPermission($user, 'viewAll')
             || $this->hasGlobalPermission($user, 'create')
             || $this->hasGlobalPermission($user, 'update')
             || $this->hasGlobalPermission($user, 'delete');
@@ -40,7 +41,7 @@ class ServicePolicy
             return true;
         }
 
-        return $this->hasGlobalPermission($user, 'view')
+        return $this->hasGlobalPermission($user, 'view', true)
             && Permissions::canAccessDevice($service->device_id, $user);
     }
 
@@ -54,17 +55,21 @@ class ServicePolicy
 
     /**
      * Determine whether the user can update the model.
+     * Without a model, only the global permission is checked.
      */
-    public function update(User $user): bool
+    public function update(User $user, ?Service $service = null): bool
     {
-        return $this->hasGlobalPermission($user, 'update');
+        return $this->hasGlobalPermission($user, 'update')
+            && ($service === null || Permissions::canAccessDevice($service->device_id, $user));
     }
 
     /**
      * Determine whether the user can delete the model.
+     * Without a model, only the global permission is checked.
      */
-    public function delete(User $user): bool
+    public function delete(User $user, ?Service $service = null): bool
     {
-        return $this->hasGlobalPermission($user, 'delete');
+        return $this->hasGlobalPermission($user, 'delete')
+            && ($service === null || Permissions::canAccessDevice($service->device_id, $user));
     }
 }

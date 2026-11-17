@@ -36,16 +36,18 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use LibreNMS\DB\SyncsModels;
 use LibreNMS\Enum\IntegerType;
+use LibreNMS\Enum\PollingMethodType;
 use LibreNMS\Interfaces\Data\DataStorageInterface;
 use LibreNMS\Interfaces\Module;
 use LibreNMS\OS;
-use LibreNMS\Polling\ModuleStatus;
 use LibreNMS\RRD\RrdDefinition;
+use LibreNMS\Traits\RequiresPollingMethod;
 use LibreNMS\Util\Number;
 
 class Xdsl implements Module
 {
     use SyncsModels;
+    use RequiresPollingMethod;
 
     /** @var string[] */
     private $trimAdminString = ['adslAtucInvVendorID', 'adslAturInvVendorID', 'adslAturInvVersionNumber', 'adslAtucInvVersionNumber'];
@@ -64,9 +66,9 @@ class Xdsl implements Module
         return ['ports'];
     }
 
-    public function shouldDiscover(OS $os, ModuleStatus $status): bool
+    public function pollingMethods(Device $device): array
     {
-        return $status->isEnabledAndDeviceUp($os->getDevice());
+        return [PollingMethodType::Snmp];
     }
 
     /**
@@ -77,11 +79,6 @@ class Xdsl implements Module
         //discover if any port has dsl data. We use the pollXdsl functions, with the datastore parameter ommitted
         $this->pollAdsl($os);
         $this->pollVdsl($os);
-    }
-
-    public function shouldPoll(OS $os, ModuleStatus $status): bool
-    {
-        return $status->isEnabledAndDeviceUp($os->getDevice());
     }
 
     /**
@@ -145,6 +142,12 @@ class Xdsl implements Module
         $adslPorts = new Collection;
 
         foreach ($adsl as $ifIndex => $data) {
+            if (! is_array($data)) {
+                $received = is_string($data) ? 'Data: "' . $data . '"' : 'Type: ' . gettype($data);
+                Log::warning("XDSL: Skipping port (ifIndex $ifIndex) - device returned malformed SNMP response. $received");
+                continue;
+            }
+
             // Values are 1/10
             foreach ($this->adslTenthValues as $oid) {
                 if (isset($data[$oid])) {
@@ -195,6 +198,11 @@ class Xdsl implements Module
         $vdslPorts = new Collection;
 
         foreach ($vdsl as $ifIndex => $data) {
+            if (! is_array($data)) {
+                $received = is_string($data) ? 'Data: "' . $data . '"' : 'Type: ' . gettype($data);
+                Log::warning("XDSL: Skipping port (ifIndex $ifIndex) - device returned malformed SNMP response. $received");
+                continue;
+            }
             $portVdsl = new PortVdsl([
                 'port_id' => PortCache::getIdFromIfIndex($ifIndex, $os->getDevice()),
                 'xdsl2ChStatusActDataRateXtur' => $data['xdsl2ChStatusActDataRate']['xtur'] ?? 0,

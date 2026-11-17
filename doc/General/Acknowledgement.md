@@ -4,8 +4,8 @@ path: blob/master/doc/
 
 # Acknowledgements
 
-LibreNMS wouldn't be what it is today without the use of some other amazing projects.
-We list below what we make use of including the license compliance.
+LibreNMS uses other open source projects.
+The lists below give each project and its license.
 
 ## 3rd Party GPLv3 Compliant
 
@@ -28,9 +28,8 @@ We list below what we make use of including the license compliance.
 - [Moment](http://momentjs.com/): MIT
 - [Tag Manager](http://soliantconsulting.github.io/tagmanager/): MIT
 - [TW Sack](https://code.google.com/p/tw-sack/): GPLv3
-- [Gridster](http://gridster.net/): MIT
+- [Gridstack](https://gridstackjs.com): MIT
 - [Pure PHP radius class](http://developer.sysco.ch/php/): GPLv3
-- [GeSHi - Generic Syntax Highlighter](http://qbnz.com/highlighter/): GPLv2+
 - MalaysiaMap.svg - By Exiang [CC BY 3.0](http://creativecommons.org/licenses/by/3.0), via Wikimedia Commons
 - Code for UBNT Devices Mark Gibbons <mgibbons@oemcomp.com> Initial code base submitted via PR721
 - [Jquery LazyLoad](http://www.appelsiini.net/projects/lazyload): MIT License
@@ -55,5 +54,4 @@ We list below what we make use of including the license compliance.
 - JpGraph (html/includes/jpgraph): QPL 1.0 license
 - MIBS (mibs): unknown/various
 - html/graph-realtime.php: BSD (original?)
-- html/includes/collectd/: GPLv2 only
 - overLIB (html/js/overlib_mini.js): modified Artistic 1.0?

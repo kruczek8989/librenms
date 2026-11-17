@@ -15,7 +15,7 @@ class AlertPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $this->hasGlobalPermission($user, 'view')
+        return $this->hasGlobalPermission($user, 'view', true)
             || $this->hasGlobalPermission($user, 'viewAll')
             || $this->hasGlobalPermission($user, 'update')
             || $this->hasGlobalPermission($user, 'delete');
@@ -38,28 +38,33 @@ class AlertPolicy
             return true;
         }
 
-        return $this->hasGlobalPermission($user, 'view')
-            && Permissions::canAccessDevice($alert->device_id, $user);
+        return $this->hasGlobalPermission($user, 'view', true)
+            && ($user->can('viewAll', \App\Models\Device::class) || Permissions::canAccessDevice($alert->device_id, $user));
     }
 
-    public function detail(User $user): bool
+    public function detail(User $user, Alert $alert): bool
     {
-        return $this->hasGlobalPermission($user, 'detail');
+        return $this->hasGlobalPermission($user, 'detail')
+            && ($user->can('viewAll', \App\Models\Device::class) || Permissions::canAccessDevice($alert->device_id, $user));
     }
 
     /**
      * Determine whether the user can update the model.
+     * Without a model, only the global permission is checked.
      */
-    public function update(User $user): bool
+    public function update(User $user, ?Alert $alert = null): bool
     {
-        return $this->hasGlobalPermission($user, 'update');
+        return $this->hasGlobalPermission($user, 'update')
+            && ($alert === null || $user->can('viewAll', \App\Models\Device::class) || Permissions::canAccessDevice($alert->device_id, $user));
     }
 
     /**
      * Determine whether the user can delete the model.
+     * Without a model, only the global permission is checked.
      */
-    public function delete(User $user): bool
+    public function delete(User $user, ?Alert $alert = null): bool
     {
-        return $this->hasGlobalPermission($user, 'delete');
+        return $this->hasGlobalPermission($user, 'delete')
+            && ($alert === null || $user->can('viewAll', \App\Models\Device::class) || Permissions::canAccessDevice($alert->device_id, $user));
     }
 }

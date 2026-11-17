@@ -31,22 +31,23 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use LibreNMS\Component;
+use LibreNMS\Enum\PollingMethodType;
 use LibreNMS\Interfaces\Data\DataStorageInterface;
 use LibreNMS\Interfaces\Module;
+use LibreNMS\Interfaces\SupportsSubmodules;
 use LibreNMS\OS;
-use LibreNMS\Polling\ModuleStatus;
+use LibreNMS\Traits\RequiresPollingMethod;
 use LibreNMS\Util\Debug;
 use Symfony\Component\Yaml\Yaml;
 
-class LegacyModule implements Module
+class LegacyModule implements Module, SupportsSubmodules
 {
+    use RequiresPollingMethod;
+
     private array $module_deps = [
         'arp-table' => ['ports'],
-        'bgp-peers' => ['ports', 'vrf', 'ipv4-addresses', 'ipv6-addresses'],
-        'fdb-table' => ['ports', 'vlans'],
         'transceivers' => ['ports'],
         'vlans' => ['ports'],
-        'vrf' => ['ports'],
     ];
 
     /**
@@ -57,13 +58,21 @@ class LegacyModule implements Module
         return $this->module_deps[$this->name] ?? [];
     }
 
+    public function pollingMethods(Device $device): array
+    {
+        return [PollingMethodType::Snmp];
+    }
+
+    /** @var string[]|null */
+    private ?array $submodules = null;
+
     public function __construct(private readonly string $name)
     {
     }
 
-    public function shouldDiscover(OS $os, ModuleStatus $status): bool
+    public function setSubmodules(?array $submodules): void
     {
-        return $this->shouldPoll($os, $status);
+        $this->submodules = $submodules;
     }
 
     public function discover(OS $os): void
@@ -76,19 +85,16 @@ class LegacyModule implements Module
 
         $device = &$os->getDeviceArray();
         $module = $this->name;
+        $submodules = $this->submodules;
         Debug::disableErrorReporting(); // ignore errors in legacy code
 
-        include_once base_path('includes/dbFacile.php');
-        include_once base_path('includes/rewrites.php');
-        include base_path("includes/discovery/$this->name.inc.php");
-
-        Debug::enableErrorReporting(); // and back to normal
-    }
-
-    public function shouldPoll(OS $os, ModuleStatus $status): bool
-    {
-        // all legacy modules require snmp except ipmi and unix-agent
-        return $status->isEnabledAndDeviceUp($os->getDevice(), check_snmp: ! in_array($this->name, ['ipmi', 'unix-agent']));
+        try {
+            include_once base_path('includes/dbFacile.php');
+            include_once base_path('includes/rewrites.php');
+            include base_path("includes/discovery/$this->name.inc.php");
+        } finally {
+            Debug::enableErrorReporting(); // and back to normal
+        }
     }
 
     public function poll(OS $os, DataStorageInterface $datastore): void
@@ -100,6 +106,7 @@ class LegacyModule implements Module
         }
 
         $device = &$os->getDeviceArray();
+        $submodules = $this->submodules;
 
         include_once base_path('includes/dbFacile.php');
         include_once base_path('includes/rewrites.php');
@@ -195,17 +202,14 @@ class LegacyModule implements Module
     {
         static $def;
 
-        if ($def === null) {
-            // only load the yaml once, then keep it in memory
-            $def = Yaml::parse(file_get_contents(base_path('/tests/module_tables.yaml')));
-        }
+        $def ??= Yaml::parse(file_get_contents(base_path('/tests/module_tables.yaml')));
 
         return $def[$this->name] ?? [];
     }
 
     private function collectComponents(int $device_id): array
     {
-        $components = (new Component())->getComponents($device_id)[$device_id] ?? [];
+        $components = new Component()->getComponents($device_id)[$device_id] ?? [];
         $components = Arr::sort($components, fn ($item) => $item['type'] . $item['label']);
 
         return array_values($components);

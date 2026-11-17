@@ -27,6 +27,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -44,11 +45,15 @@ use LibreNMS\Enum\AlertState;
  * @property string $query
  * @property array<string, mixed>|null $builder
  * @property bool|int $invert_map
+ * @property bool|int $notify_per_entity
+ * @property int|null $max_entities
  * @property int|null $alert_operation_id
  * @property AlertOperation|null $alertOperation
  */
 class AlertRule extends BaseModel
 {
+    use HasFactory;
+
     public $timestamps = false;
 
     protected static function booted(): void
@@ -56,6 +61,7 @@ class AlertRule extends BaseModel
         static::deleting(function (AlertRule $rule): void {
             $rule->alerts()->delete();
             $rule->logs()->delete();
+            AlertFault::where('rule_id', $rule->id)->delete();
             $rule->templateMaps()->delete();
 
             $rule->devices()->detach();
@@ -74,16 +80,54 @@ class AlertRule extends BaseModel
         'query',
         'builder',
         'invert_map',
+        'notify_per_entity',
+        'max_entities',
         'alert_operation_id',
     ];
 
-    protected $casts = [
-        'builder' => 'array',
-        'extra' => 'array',
-        'alert_operation_id' => 'integer',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'builder' => 'array',
+            'extra' => 'array',
+            'alert_operation_id' => 'integer',
+            'notify_per_entity' => 'boolean',
+            'max_entities' => 'integer',
+        ];
+    }
 
     // ---- Query scopes ----
+
+    /**
+     * @param  Builder<AlertRule>  $query
+     * @param  Device  $device
+     * @return Builder<AlertRule>
+     */
+    protected function scopeForDevice(Builder $query, Device $device): Builder
+    {
+        return $query->where(function (Builder $query) use ($device): void {
+            $query->where(function (Builder $query): void {
+                $query->whereDoesntHave('devices')
+                    ->whereDoesntHave('groups')
+                    ->whereDoesntHave('locations');
+            })->orWhere(function (Builder $query) use ($device): void {
+                $query->where('invert_map', 0)
+                    ->where(function (Builder $query) use ($device): void {
+                        $query->whereHas('devices', fn ($q) => $q->where('devices.device_id', $device->device_id))
+                            ->orWhereHas('groups.devices', fn ($q) => $q->where('devices.device_id', $device->device_id))
+                            ->orWhereHas('locations', fn ($q) => $q->where('locations.id', $device->location_id));
+                    });
+            })->orWhere(function (Builder $query) use ($device): void {
+                $query->where('invert_map', 1)
+                    ->whereDoesntHave('devices', fn ($q) => $q->where('devices.device_id', $device->device_id))
+                    ->whereDoesntHave('groups.devices', fn ($q) => $q->where('devices.device_id', $device->device_id))
+                    ->whereDoesntHave('locations', fn ($q) => $q->where('locations.id', $device->location_id));
+            });
+        });
+    }
 
     /**
      * @param  Builder<AlertRule>  $query

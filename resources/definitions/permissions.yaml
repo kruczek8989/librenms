@@ -6,6 +6,10 @@ groups:
         - alert.update
         - alert.delete
 
+    alert-log:
+        - alert-log.viewAll
+        - alert-log.view
+
     alert-rule:
         - alert-rule.viewAll
         - alert-rule.view
@@ -31,15 +35,12 @@ groups:
         - alert-transport.update
         - alert-transport.delete
 
-    alert-operation:
-        - alert-operation.view
-        - alert-operation.create
-        - alert-operation.update
-        - alert-operation.delete
     api:
         - api.access
 
     application:
+        - application.viewAll
+        - application.view
         - application.update
 
     auth-log:
@@ -53,7 +54,15 @@ groups:
         - bill.delete
 
     component:
+        - component.viewAll
+        - component.view
+        - component.create
         - component.update
+        - component.delete
+
+    config-backup:
+        - config-backup.view
+        - config-backup.refresh
 
     custom-map:
         - custom-map.viewAll
@@ -63,6 +72,8 @@ groups:
         - custom-map.delete
 
     dashboard:
+        - dashboard.update
+        - dashboard.delete
         - dashboard.copy
 
     device:
@@ -72,7 +83,6 @@ groups:
         - device.update
         - device.delete
         - device.debug
-        - device.showConfig
         - device.updateNotes
 
     device-group:
@@ -82,8 +92,27 @@ groups:
         - device-group.update
         - device-group.delete
 
+    diskio:
+        - diskio.viewAll
+        - diskio.view
+
+    eventlog:
+        - eventlog.viewAll
+        - eventlog.view
+
+    inventory:
+        - inventory.viewAll
+        - inventory.view
+        - inventory.purge
+
+    irc:
+        - irc.join
+        - irc.quit
+        - irc.reload
+
     link:
         - link.viewAll
+        - link.view
 
     location:
         - location.viewAll
@@ -93,14 +122,20 @@ groups:
         - location.delete
 
     mempool:
+        - mempool.viewAll
+        - mempool.view
         - mempool.update
 
     notification:
-        - notification.update
         - notification.create
+        - notification.update
+        - notification.delete
+
+    outage:
+        - outage.viewAll
+        - outage.view
 
     oxidized:
-        - oxidized.refresh
         - oxidized.search
 
     peering-db:
@@ -141,12 +176,28 @@ groups:
         - reporting.update
 
     role:
+        - role.view
+        - role.create
         - role.update
+        - role.delete
 
     routing:
         - routing.viewAll
         - routing.view
         - routing.update
+
+    sensor:
+        - sensor.viewAll
+        - sensor.view
+        - sensor.update
+
+    secret:
+        - secret.viewAll
+        - secret.view
+        - secret.create
+        - secret.update
+        - secret.delete
+        - secret.unmask
 
     service:
         - service.viewAll
@@ -168,16 +219,29 @@ groups:
     ssl-certificate:
         - ssl-certificate.view
         - ssl-certificate.create
+        - ssl-certificate.update
         - ssl-certificate.delete
 
+    storage:
+        - storage.viewAll
+        - storage.view
+        - storage.update
+
     syslog:
+        - syslog.viewAll
+        - syslog.view
         - syslog.delete
+
+    tools:
+        - tools.oui
+        - tools.ripe
 
     user:
         - user.view
         - user.create
         - user.update
         - user.delete
+        - user.manage
 
     vlan:
         - vlan.viewAll
@@ -188,12 +252,45 @@ groups:
         - vminfo.update
 
     wireless-sensor:
+        - wireless-sensor.viewAll
+        - wireless-sensor.view
         - wireless-sensor.update
         - wireless-sensor.delete
 
+    worker:
+        - worker.view
+        - worker.update
+        - worker.horizon
+
 hidden:
-    - customoid.update
-    - customoid.create
-    - customoid.delete
+    - customoid.viewAll
     - customoid.view
+    - customoid.create
+    - customoid.update
+    - customoid.delete
+    - user.updatePassword
+
+# Grant with care: these allow running code or queries, reading secrets, or gaining more access.
+# The reason is shown next to the permission, from the "risk" text in lang/en/permissions.php.
+risky:
+    - alert-rule.create
+    - alert-rule.update
+    - alert-template.create
+    - alert-template.update
+    - alert-transport.create
+    - alert-transport.update
+    - config-backup.view
+    - device.debug
+    - plugin.admin
+    - role.create
+    - role.update
+    - secret.unmask
+    - service.create
+    - service.update
+    - service-template.create
+    - service-template.update
+    - settings.update
+    - user.create
+    - user.update
+    - user.manage
     - user.updatePassword

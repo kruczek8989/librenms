@@ -9,8 +9,8 @@
     </div>
     @else
     <div x-show="supported">
-        @can('update', \App\Models\AlertTransport::class)
-            <a href="{{ url('alert-transports') }}">
+        @can('alert-transport.update')
+            <a href="{{ route('alert-transports.index') }}">
                 {{ __('components.notification-subscription-status.no-transport') }}
             </a>
         @else

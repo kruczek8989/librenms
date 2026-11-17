@@ -21,12 +21,11 @@ return [
         'ip_exists' => '無法新增 :hostname，因為已有裝置 :existing 使用相同 IP :ip',
         'sysname_exists' => '因 sysName 重複（:sysname），已存在裝置 :hostname',
     ],
+    'host_name_empty' => '主機名稱為空',
     'host_unreachable' => [
         'unpingable' => '無法 Ping :hostname（:ip）',
         'unsnmpable' => '無法連線至 :hostname，請檢查 SNMP 設定與連線可達性',
         'unresolvable' => '主機名稱無法解析為 IP',
-        'no_reply_community' => 'SNMP :version：使用共同社群 :credentials 無回應',
-        'no_reply_credentials' => 'SNMP :version：使用認證資料 :credentials 無回應',
     ],
     'ldap_missing' => [
         'title' => '缺少 PHP LDAP 支援',

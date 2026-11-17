@@ -6,8 +6,8 @@
 <div class="tw:px-3 tw:sm:px-6 tw:mx-auto">
     @include('map.custom-nodeimage-modal')
     @include('map.custom-nodeimage-delete-modal')
-    <x-panel id="manage-custom-nodeimages" body-class="tw:pb-0!" class="tw:mx-auto tw:max-w-(--breakpoint-lg)">
-        <x-slot name="title">
+    <x-panel id="manage-custom-nodeimages" class="tw:mx-auto tw:max-w-(--breakpoint-lg)">
+        <x-slot:title>
             <div class="tw:flex tw:justify-between tw:items-center">
                 <div>
                     {{ __('map.custom.nodeimage.title.manage') }}
@@ -18,8 +18,8 @@
                     </button>
                 </div>
             </div>
-        </x-slot>
-
+        </x-slot:title>
+        <x-slot:slot class="tw:p-0"></x-slot:slot>
     </x-panel>
 </div>
 @endsection
@@ -32,7 +32,7 @@
 '            <div class="tw:flex tw:justify-between tw:p-3 tw:items-center tw:hover:bg-gray-100 tw:dark:hover:bg-gray-600">' +
 '                <div id="imagename-' + node_image_id + '">' + name + '</div>' +
 '                <div>' +
-'                    <img id="imageview-' + node_image_id + '" src="' + '{{ route('maps.nodeimage.show', ['image' => '?' ]) }}'.replace("?", node_image_id) + '" width="25" height="25">' +
+'                    <img id="imageview-' + node_image_id + '" src="' + route('maps.nodeimage.show', {image: node_image_id}) + '" width="25" height="25">' +
 '                </div>' +
 '                <div class="tw:whitespace-nowrap">' +
 '                    <button class="btn btn-default" onclick="imageModalEdit(' + node_image_id + ');">' +

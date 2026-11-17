@@ -24,6 +24,8 @@
 DAILY_SCRIPT=$(readlink -f "$0")
 LIBRENMS_DIR=$(dirname "$DAILY_SCRIPT")
 COMPOSER="php ${LIBRENMS_DIR}/scripts/composer_wrapper.php --no-interaction"
+# exists while test patches applied with lnms patch:apply are present
+PATCHES_FILE="${LIBRENMS_DIR}/storage/app/patches/patches.json"
 
 # set log_file, using librenms 'log_dir' config setting, if set
 # otherwise we default to <LibreNMS Install Directory>/logs
@@ -34,6 +36,17 @@ LOG_DIR=$(php -r "@include '${LIBRENMS_DIR}/config.php'; echo isset(\$config['lo
 source "${LIBRENMS_DIR}/.env"
 LIBRENMS_USER="${LIBRENMS_USER:-librenms}"
 LIBRENMS_USER_ID=$(id -u "$LIBRENMS_USER")
+
+#######################################
+# Append a timestamped line to the daily log
+# Globals:
+#   LOG_DIR
+# Arguments:
+#   Text
+#######################################
+log_line() {
+    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "${LOG_DIR}/daily.log"
+}
 
 #######################################
 # Fancy-Print and run commands
@@ -59,11 +72,11 @@ status_run() {
     # otherwise we default to ./logs/daily.log
 
     printf "%-50s" "${arg_text}"
-    echo "${arg_text}" >> "${log_file}"
+    log_line "${arg_text}"
     tmp=$(bash -c "${arg_command}" 2>&1)
     exit_code=$?
     echo "${tmp}" >> "${log_file}"
-    echo "Returned: ${exit_code}" >> "${log_file}"
+    log_line "Returned: ${exit_code}"
 
     # print OK if the command ran successfully
     # or FAIL otherwise (non-zero exit code)
@@ -80,6 +93,24 @@ status_run() {
         fi
     fi
     return ${exit_code}
+}
+
+# Laravel can return a distinct exit code when it skips an isolated command.
+update_schema() {
+    # Variables are expanded by status_run's bash -c.
+    # shellcheck disable=SC2016
+    status_run 'Updating SQL-Schema' '
+        lock_busy=75
+        deadline=$((SECONDS + 55 * 60))
+        while (( SECONDS < deadline )); do
+            ./lnms migrate --force --no-interaction --isolated="$lock_busy"
+            result=$?
+            (( result == lock_busy )) || exit "$result"
+            sleep 5
+        done
+        echo "Timed out waiting for the schema migration lock." >&2
+        exit "$lock_busy"
+    '
 }
 
 #######################################
@@ -130,30 +161,32 @@ set_notifiable_result() {
 #   Exit-Code: 0 >= min ver, 1 < min ver
 #######################################
 check_dependencies() {
-    local branch ver_71 ver_72 ver_73 ver_81 ver_82 python3 python_deps phpver pythonver old_branches msg
+    local branch ver_71 ver_72 ver_73 ver_81 ver_82 ver_84 python3 phpver pythonver old_branches msg
 
     branch=$(git rev-parse --abbrev-ref HEAD)
-    scripts/check_requirements.py > /dev/null 2>&1 || pip3 install -r requirements.txt > /dev/null 2>&1
+
+    # attempt to install python requirements, will likely fail
+    pip3 install -r requirements.txt > /dev/null 2>&1
 
     ver_71=$(php -r "echo (int)version_compare(PHP_VERSION, '7.1.3', '<');")
     ver_72=$(php -r "echo (int)version_compare(PHP_VERSION, '7.2.5', '<');")
     ver_73=$(php -r "echo (int)version_compare(PHP_VERSION, '7.3', '<');")
     ver_81=$(php -r "echo (int)version_compare(PHP_VERSION, '8.1', '<');")
     ver_82=$(php -r "echo (int)version_compare(PHP_VERSION, '8.2', '<');")
+    ver_84=$(php -r "echo (int)version_compare(PHP_VERSION, '8.4', '<');")
     python3=$(python3 -c "import sys;print(int(sys.version_info < (3, 4)))" 2> /dev/null)
-    python_deps=$("${LIBRENMS_DIR}/scripts/check_requirements.py" > /dev/null 2>&1; echo $?)
     phpver="master"
     pythonver="master"
 
-    old_branches="^(php53|php56|php71-python2|php72|php73|php81)$"
-    if [[ $branch =~ $old_branches ]] && [[ "$ver_82" == "0" && "$python3" == "0" && "$python_deps" == "0" ]]; then
+    old_branches="^(php53|php56|php71-python2|php72|php73|php81|php82)$"
+    if [[ $branch =~ $old_branches ]] && [[ "$ver_84" == "0" && "$python3" == "0" ]]; then
         status_run "Supported PHP and Python version, switched back to master branch." 'git checkout master'
     elif [[ "$ver_71" != "0" ]]; then
         phpver="php56"
         if [[ "$branch" != "php56" ]]; then
             status_run "Unsupported PHP version, switched to php56 branch." 'git checkout php56'
         fi
-    elif [[ "$ver_72" != "0" || "$python3" != "0" || "$python_deps" != "0" ]]; then
+    elif [[ "$ver_72" != "0" || "$python3" != "0" ]]; then
         msg=""
         if [[ "$ver_72" != "0" ]]; then
             msg="Unsupported PHP version, $msg"
@@ -162,9 +195,6 @@ check_dependencies() {
         if [[ "$python3" != "0" ]]; then
             msg="python3 is not available, $msg"
             pythonver="python3-missing"
-        elif [[ "$python_deps" != "0" ]]; then
-            msg="Python 3 dependencies missing, $msg"
-            pythonver="python3-deps"
         fi
 
         if [[ "$branch" != "php71-python2" ]]; then
@@ -184,6 +214,11 @@ check_dependencies() {
         phpver="php81"
         if [[ "$branch" != "php81" ]]; then
             status_run "Unsupported PHP version, switched to php81 branch." 'git checkout php81'
+        fi
+    elif [[ "$ver_84" != "0" ]]; then
+        phpver="php82"
+        if [[ "$branch" != "php82" ]]; then
+            status_run "Unsupported PHP version, switched to php82 branch." 'git checkout php82'
         fi
     fi
 
@@ -278,7 +313,7 @@ main () {
     if [[ -z "$arg" ]]; then
         up=$(php daily.php -f update >&2; echo $?)
         if [[ "$up" == "0" ]]; then
-            "${DAILY_SCRIPT}" no-code-update
+            "${DAILY_SCRIPT}" no-code-update || return $?
             set_notifiable_result update 1  # make sure there are no update notifications if update is disabled
             exit
         fi
@@ -286,14 +321,16 @@ main () {
         check_dependencies
         php_ver_ret=$?
 
-        # Clear caches before update
-        status_run 'Clearing caches' 'php artisan optimize:clear'
+        # Clear local bootstrap caches without flushing another node's migration lock.
+        status_run 'Clearing bootstrap caches' 'php artisan optimize:clear --except=cache'
 
-        # Restore composer files if user installed plugins
-        git checkout --quiet -- composer.json composer.lock
+        # Restore composer files if user installed plugins (patch:pre-update does this when test patches are applied)
+        if [[ ! -f "$PATCHES_FILE" ]]; then
+            git checkout --quiet -- composer.json composer.lock
+        fi
 
         update_res=0
-        if [[ "$up" == "1" ]] || [[ "$php_ver_ret" == "1" ]]; then
+        if [[ "$up" == "2" ]] || [[ "$php_ver_ret" == "1" ]]; then
             # Update current branch to latest
             branch=$(git rev-parse --abbrev-ref HEAD)
             if [[ "$branch" == "HEAD" ]]; then
@@ -302,6 +339,10 @@ main () {
             fi
 
             old_ver=$(git rev-parse --short HEAD)
+            if [[ -f "$PATCHES_FILE" ]]; then
+                git fetch --quiet
+                status_run 'Checking test patches' "./lnms patch:pre-update '@{upstream}'"
+            fi
             status_run 'Updating to latest codebase' 'git pull --quiet' 'update'
             update_res=$?
             new_ver=$(git rev-parse --short HEAD)
@@ -325,6 +366,9 @@ main () {
             if [[ -z $old_ver ]] && [[ $newer_check -eq 0 ]]; then
                 echo 'Between releases, waiting for newer release'
             else
+                if [[ -f "$PATCHES_FILE" ]]; then
+                    status_run 'Checking test patches' "./lnms patch:pre-update ${latest_hash}"
+                fi
                 status_run 'Updating to latest release' "git checkout ${latest_hash}" 'update'
                 update_res=$?
                 new_ver=$(git describe --exact-match --tags "$(git log -n1 --pretty='%h')")
@@ -342,7 +386,7 @@ main () {
             no-code-update)
                 # Updates of the code are disabled, just check for schema updates
                 # and clean up the db.
-                status_run 'Updating SQL-Schema' './lnms migrate --force --no-interaction --isolated'
+                update_schema || return $?
                 status_run 'Cleaning up DB' "'$DAILY_SCRIPT' cleanup"
             ;;
             post-pull)
@@ -368,9 +412,11 @@ main () {
                 fi
 
                 # List all tasks to do after pull in the order of execution
-                status_run 'Updating SQL-Schema' './lnms migrate --force --no-interaction --isolated'
+                update_schema || return $?
+                if [[ "$old_version" != "$new_version" && "$QUEUE_CONNECTION" == 'redis' ]]; then
+                    status_run 'Restarting queue workers' 'php artisan horizon:terminate'
+                fi
                 status_run 'Cleaning up DB' "$DAILY_SCRIPT cleanup"
-                status_run 'Caching PeeringDB data' "$DAILY_SCRIPT peeringdb"
             ;;
             cleanup)
                 # Cleanups
@@ -390,9 +436,6 @@ main () {
                                "ports_purge")
                 call_daily_php "${options[@]}"
             ;;
-            peeringdb)
-                options=("peeringdb")
-                call_daily_php "${options[@]}"
         esac
     fi
 }

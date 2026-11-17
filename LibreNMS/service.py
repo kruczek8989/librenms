@@ -39,6 +39,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# how often to re-collect the poller details reported to poller_cluster (6 hours)
+POLLER_DETAILS_REFRESH = 21600
+
 
 class LogOutput(Enum):
     NONE = "none"
@@ -79,6 +82,7 @@ class ServiceConfig(DBConfig):
     single_instance = True
     distributed = False
     group = 0
+    memory_pressure_percent = None
 
     debug = False
     log_level = 20
@@ -127,6 +131,10 @@ class ServiceConfig(DBConfig):
         self.group = ServiceConfig.parse_group(
             config.get("distributed_poller_group", ServiceConfig.group)
         )
+        self.memory_pressure_percent = os.getenv(
+            "DISPATCHER_MEMORY_PRESSURE_PERCENT",
+            ServiceConfig.memory_pressure_percent,
+        )
 
         self.master_timeout = config.get(
             "service_master_timeout", ServiceConfig.master_timeout
@@ -140,7 +148,8 @@ class ServiceConfig(DBConfig):
             "service_poller_workers", ServiceConfig.poller.workers
         )
         self.poller.frequency = config.get(
-            "service_poller_frequency", ServiceConfig.poller.frequency
+            "service_poller_frequency",
+            config.get("rrd").get("step", ServiceConfig.poller.frequency),
         )
         self.discovery.enabled = (
             config.get("service_discovery_enabled", True)
@@ -188,7 +197,10 @@ class ServiceConfig(DBConfig):
             if config.get("schedule_type").get("ping", "legacy") == "legacy"
             else config.get("schedule_type").get("ping", "legacy") == "dispatcher"
         )
-        self.ping.frequency = config.get("ping_rrd_step", ServiceConfig.ping.frequency)
+        self.ping.frequency = config.get(
+            "service_ping_frequency",
+            config.get("ping_rrd_step", ServiceConfig.ping.frequency),
+        )
         self.down_retry = config.get(
             "service_poller_down_retry", ServiceConfig.down_retry
         )
@@ -423,6 +435,7 @@ class Service:
             10, self.systemd_watchdog, "systemd-watchdog"
         )
         self.is_master = False
+        self._poller_details_time = 0
 
     def service_age(self):
         return time.time() - self.start_time
@@ -446,7 +459,16 @@ class Service:
         A process from a previous invocation is trying to report its status
         """
         # Speed things up by only looking at direct zombie children
-        for p in psutil.Process().children(recursive=False):
+        try:
+            children = psutil.Process().children(recursive=False)
+        except (OSError, psutil.AccessDenied):
+            # psutil may raise AccessDenied during /proc scans on hosts with PID churn.
+            # Catch it to keep the dispatcher alive and re-arm reaping, since no
+            # further SIGCHLD may arrive to retry pending children.
+            self.reap_flag = True
+            logger.debug("Could not enumerate child processes", exc_info=True)
+            return
+        for p in children:
             try:
                 status = p.status()
 
@@ -459,8 +481,13 @@ class Service:
                         r[0],
                         r[1],
                     )
-            except (OSError, psutil.NoSuchProcess):
-                # process was already reaped
+            except psutil.NoSuchProcess:
+                # process was already reaped, nothing to retry
+                continue
+            except (OSError, psutil.AccessDenied):
+                # child was unreadable mid-reap, re-arm so a possible zombie
+                # gets another chance on the next loop iteration
+                self.reap_flag = True
                 continue
 
     def start(self):
@@ -633,7 +660,7 @@ class Service:
                     `last_polled` <= DATE_ADD(DATE_ADD(NOW(), INTERVAL -%s SECOND), INTERVAL COALESCE(`last_polled_timetaken`, 0) SECOND) OR
                     `last_discovered` <= DATE_ADD(DATE_ADD(NOW(), INTERVAL -%s SECOND), INTERVAL COALESCE(`last_discovered_timetaken`, 0) SECOND)
                 )
-                ORDER BY `last_polled_timetaken` DESC""",
+                ORDER BY `last_discovered` IS NULL DESC, `last_polled_timetaken` DESC""",
                 (
                     poller_find_time,
                     self.service_age(),
@@ -660,31 +687,14 @@ class Service:
 
     def run_maintenance(self):
         """
-        Runs update and cleanup tasks by calling daily.sh.  Reloads the python script after the update.
-        Sets a schema-update lock so no distributed pollers will update until the schema has been updated.
+        Run update and cleanup tasks by calling daily.sh, then reload on success.
         """
-        attempt = 0
-        wait = 5
-        max_runtime = 86100
-        max_tries = int(max_runtime / wait)
-        logger.info("Waiting for schema lock")
-        while not self._lm.lock("schema-update", self.config.unique_name, max_runtime):
-            attempt += 1
-            if attempt >= max_tries:  # don't get stuck indefinitely
-                logger.warning(
-                    "Reached max wait for other pollers to update, updating now"
-                )
-                break
-            sleep(wait)
-
         logger.info("Running maintenance tasks")
         exit_code, output = LibreNMS.call_script("daily.sh")
         if exit_code == 0:
             logger.info("Maintenance tasks complete\n{}".format(output))
         else:
             logger.error("Error {} in daily.sh:\n{}".format(exit_code, output))
-
-        self._lm.unlock("schema-update", self.config.unique_name)
 
         self.reload_flag = True
 
@@ -895,6 +905,16 @@ class Service:
                 )
             )
 
+            try:
+                poller_details = self.get_poller_details_due()
+                if poller_details is not None:
+                    self._db.query(
+                        "UPDATE `poller_cluster` SET `poller_details`=%s WHERE `node_id`=%s",
+                        (poller_details, self.config.node_id),
+                    )
+            except Exception:
+                logger.warning("Could not record poller details", exc_info=True)
+
             # Find our ID
             self._db.query(
                 'SELECT id INTO @parent_poller_id FROM poller_cluster WHERE node_id="{0}"; '.format(
@@ -928,6 +948,14 @@ class Service:
                 "Unable to log performance statistics - is the database still online?",
                 exc_info=True,
             )
+
+    def get_poller_details_due(self):
+        now = time.time()
+        if now - self._poller_details_time > POLLER_DETAILS_REFRESH:
+            self._poller_details_time = now
+            return LibreNMS.get_poller_details_json()
+
+        return None
 
     def systemd_watchdog(self):
         if self.config.health_file:

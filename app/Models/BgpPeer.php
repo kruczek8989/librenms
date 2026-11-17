@@ -28,8 +28,10 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use LibreNMS\Interfaces\Models\HasSyncProtectedAttributes;
+use LibreNMS\Interfaces\Models\Keyable;
 
-class BgpPeer extends DeviceRelatedModel
+class BgpPeer extends DeviceRelatedModel implements Keyable, HasSyncProtectedAttributes
 {
     use HasFactory;
 
@@ -42,6 +44,9 @@ class BgpPeer extends DeviceRelatedModel
         'bgpPeerRemoteAs',
         'bgpPeerState',
         'bgpPeerAdminStatus',
+        'bgpPeerLastErrorCode',
+        'bgpPeerLastErrorSubCode',
+        'bgpPeerLastErrorText',
         'bgpLocalAddr',
         'bgpPeerRemoteAddr',
         'bgpPeerInUpdates',
@@ -53,10 +58,41 @@ class BgpPeer extends DeviceRelatedModel
         'bgpPeerDescr',
         'bgpPeerIface',
         'astext',
+        'context_name',
     ];
+
+    /**
+     * Session state is updated by polling, so state changes are seen there
+     */
+    private const array POLLED_ATTRIBUTES = [
+        'bgpPeerState',
+        'bgpPeerAdminStatus',
+        'bgpPeerLastErrorCode',
+        'bgpPeerLastErrorSubCode',
+        'bgpPeerLastErrorText',
+        'bgpPeerIface',
+        'bgpLocalAddr',
+        'bgpPeerInUpdates',
+        'bgpPeerOutUpdates',
+        'bgpPeerInTotalMessages',
+        'bgpPeerOutTotalMessages',
+        'bgpPeerFsmEstablishedTime',
+        'bgpPeerInUpdateElapsedTime',
+    ];
+
+    public function getCompositeKey(): string
+    {
+        return "$this->bgpPeerIdentifier|$this->context_name|$this->vrf_id";
+    }
+
+    public function getSyncProtectedAttributes(): array
+    {
+        return self::POLLED_ATTRIBUTES;
+    }
+
     // ---- Query scopes ----
 
-    public function scopeInAlarm(Builder $query)
+    protected function scopeInAlarm(Builder $query)
     {
         return $query->where(function (Builder $query): void {
             $query->where('bgpPeerAdminStatus', 'start')

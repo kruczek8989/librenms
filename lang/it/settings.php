@@ -739,6 +739,10 @@ return [
                 'help' => 'Disables the creation of outages and decreasing of availability for devices which are in maintenance mode.',
             ],
         ],
+        'graph_stat_percentile_disable' => [
+            'description' => 'Disable Percentile for stats graphs globally',
+            'help' => 'Disables display of the percentile values and lines for graphs that display those',
+        ],
         'graphs' => [
             'port_speed_zoom' => [
                 'description' => 'Zoom port graphs to port speed',
@@ -1029,9 +1033,8 @@ return [
             'description' => 'Bad Interfaces',
             'help' => 'Network Interface Types which should be ignored',
         ],
-        'ping_rrd_step' => [
-            'description' => 'Ping Frequency',
-            'help' => 'How often to check. Sets the default value for all nodes. Warning! If you change this you must make additional changes.  Check the Fast Ping docs.',
+        'ping' => [
+            'description' => 'Path to ping',
         ],
         'poller_modules' => [
             'unix-agent' => [
@@ -1064,7 +1067,7 @@ return [
             'ucd-mib' => [
                 'description' => 'Ucd Mib',
             ],
-            'ipSystemStats' => [
+            'ip-system-stats' => [
                 'description' => 'ipSystemStats',
             ],
             'ports' => [
@@ -1188,7 +1191,7 @@ return [
                 'description' => 'URL',
                 'help' => 'The URL of the Prometheus Push Gateway to send data to',
             ],
-            'Job' => [
+            'job' => [
                 'description' => 'Job',
                 'help' => 'Job label for exported metrics',
             ],
@@ -1232,7 +1235,8 @@ return [
                 'description' => 'Change the rrd heartbeat value (default 600)',
             ],
             'step' => [
-                'description' => 'Change the rrd step value (default 300)',
+                'description' => 'Change the rrd step value (default 300)  (Warning!)',
+                'help' => 'Warning! Changing this without fixing rrd files and changing your polling schedule will break graphs. See docs for more info.',
             ],
         ],
         'rrd_dir' => [
@@ -1262,13 +1266,17 @@ return [
             'description' => 'Sets the version of rrdtool on your server',
             'help' => 'Anything over 1.5.5 supports all features LibreNMS uses, do not set higher than your installed version',
         ],
+        'service_ping_frequency' => [
+            'description' => 'Ping Frequency',
+            'help' => 'How often to run fast ping on all devices.',
+        ],
         'service_poller_workers' => [
             'description' => 'Poller Workers',
             'help' => 'Amount of poller workers to spawn. Sets the default value for all nodes.',
         ],
         'service_poller_frequency' => [
             'description' => 'Poller Frequency (Warning!)',
-            'help' => 'How often to poll devices. Sets the default value for all nodes. Warning! Changing this without fixing rrd files will break graphs. See docs for more info.',
+            'help' => 'How often to poll devices. Sets the default value for all nodes. Warning! This should normally be blank/null to match the rrd step option, otherwise you may break graphs. See docs for more info.',
         ],
         'service_poller_down_retry' => [
             'description' => 'Device Down Retry',
@@ -1511,10 +1519,6 @@ return [
                 'description' => 'Set the minimum graph height',
                 'help' => 'Minimum Graph Height (default: 300)',
             ],
-            'graph_stat_percentile_disable' => [
-                'description' => 'Disable Percentile for stats graphs globally',
-                'help' => 'Disables display of the percentile values and lines for graphs that display those',
-            ],
         ],
         'device_display_default' => [
             'description' => 'Default device display name template',
@@ -1530,21 +1534,23 @@ return [
             'description' => 'Location Map open',
             'help' => 'Location Map is shown by default',
         ],
-        'smokeping.integration' => [
-            'description' => 'Enable',
-            'help' => 'Enable smokeping integration',
-        ],
-        'smokeping.dir' => [
-            'description' => 'Path to rrds',
-            'help' => 'Full path to Smokeping RRDs',
-        ],
-        'smokeping.pings' => [
-            'description' => 'Pings',
-            'help' => 'Number of pings configured in Smokeping',
-        ],
-        'smokeping.url' => [
-            'description' => 'URL to smokeping',
-            'help' => 'Full URL to the smokeping gui',
+        'smokeping' => [
+            'integration' => [
+                'description' => 'Enable',
+                'help' => 'Enable smokeping integration',
+            ],
+            'dir' => [
+                'description' => 'Path to rrds',
+                'help' => 'Full path to Smokeping RRDs',
+            ],
+            'pings' => [
+                'description' => 'Pings',
+                'help' => 'Number of pings configured in Smokeping',
+            ],
+            'url' => [
+                'description' => 'URL to smokeping',
+                'help' => 'Full URL to the smokeping gui',
+            ],
         ],
     ],
     'twofactor' => [

@@ -1,14 +1,13 @@
 <?php
 
+use App\Facades\DeviceCache;
 use App\Facades\LibrenmsConfig;
 use App\Models\Eventlog;
-use LibreNMS\Enum\PortAssociationMode;
 use LibreNMS\Enum\Severity;
 use LibreNMS\RRD\RrdDefinition;
 use LibreNMS\Util\Debug;
 use LibreNMS\Util\Mac;
 use LibreNMS\Util\Number;
-use LibreNMS\Util\StringHelpers;
 
 // Build SNMP Cache Array
 $data_oids = [
@@ -213,8 +212,8 @@ if ($device['os'] === 'f5' && (version_compare($device['version'], '11.2.0', '>=
 } elseif ($device['os'] === 'exalink-fusion') {
     require 'ports/exalink-fusion.inc.php';
 } else {
-    $selected_attrib = DeviceCache::get($device['device_id'] ?? null)->getAttrib('selected_ports');
-    if ($selected_attrib !== null ? $selected_attrib == 'true' : LibrenmsConfig::getOsSetting($device['os'], 'polling.selected_ports')) {
+    $selected_ports = DeviceCache::get($device['device_id'] ?? null)->selectedPortPolling();
+    if ($selected_ports->isEnabled()) {
         $fetched_data_string .= '(Selected ports polling): ';
 
         // remove the deleted and disabled ports and mark them skipped
@@ -226,7 +225,7 @@ if ($device['os'] === 'f5' && (version_compare($device['version'], '11.2.0', '>=
 
         // only try to guess if we should walk base oids if selected_ports is set only globally
         $walk_base = false;
-        if (! LibrenmsConfig::has("os.{$device['os']}.polling.selected_ports") && $selected_attrib === null) {
+        if ($selected_ports->os === null && $selected_ports->device === null) {
             // if less than 5 ports or less than 10% of the total ports are skipped, walk the base oids instead of get
             $polled_port_count = count($polled_ports);
             $total_port_count = count($ports);
@@ -426,7 +425,9 @@ if (isset($device['os_group']) && $device['os_group'] == 'cisco' && $device['os'
     }
     if (count($pagp_port_stats) > 0) {
         foreach ($pagp_port_stats as $p_index => $p_stats) {
-            $port_stats[$p_index]['pagpOperationMode'] = $p_stats['pagpOperationMode'];
+            if (isset($p_stats['pagpOperationMode'])) {
+                $port_stats[$p_index]['pagpOperationMode'] = $p_stats['pagpOperationMode'];
+            }
         }
         foreach ($pagp_extended_oids as $oid) {
             $port_stats = snmpwalk_cache_oid($device, $oid, $port_stats, 'CISCO-PAGP-MIB');
@@ -463,10 +464,7 @@ d_echo($port_stats);
 // The port association configuration allows to choose between association via ifIndex, ifName,
 // or maybe other means in the future. The default port association mode still is ifIndex for
 // compatibility reasons.
-$port_association_mode = LibrenmsConfig::get('default_port_association_mode');
-if ($device['port_association_mode']) {
-    $port_association_mode = PortAssociationMode::getName($device['port_association_mode']);
-}
+$port_association_mode = DeviceCache::get($device['device_id'] ?? null)->polling()->snmp()->portAssociationMode;
 
 $ports_found = [];
 // New interface detection
@@ -587,9 +585,6 @@ foreach ($ports as $port) {
             $this_port['ifName'] = $matches[1];
         }
 
-        $this_port['ifName'] = StringHelpers::inferEncoding($this_port['ifName'] ?? null);
-        $this_port['ifDescr'] = StringHelpers::inferEncoding($this_port['ifDescr'] ?? null);
-
         $polled_period = max($polled - $port['poll_time'], 1);
 
         $port['update'] = [];
@@ -685,11 +680,11 @@ foreach ($ports as $port) {
                 $ifAlias_override = DeviceCache::getPrimary()->getAttrib('ifName:' . $port['ifName']);
                 if ($ifAlias_override !== null) {
                     // handle legacy '1' setting, otherwise use value set by override
-                    $current_oid = $ifAlias_override === '1' ? $port['ifAlias'] : $ifAlias_override;
+                    $ifAlias_override = $ifAlias_override === '1' ? $port['ifAlias'] : $ifAlias_override;
+                    $current_oid = $ifAlias_override;
                 } else {
                     $current_oid = $this_port['ifAlias'];
                 }
-                $current_oid = StringHelpers::inferEncoding($current_oid); // prevent invalid non-utf8 characters
             }
             if ($oid == 'ifSpeed') {
                 $ifSpeed_override = DeviceCache::getPrimary()->getAttrib('ifSpeed:' . $port['ifName']);
@@ -746,8 +741,15 @@ foreach ($ports as $port) {
             }
         }//end foreach
 
-        // Parse description (usually ifAlias) if config option set
-        if (LibrenmsConfig::has('port_descr_parser') && is_file(LibrenmsConfig::get('install_dir') . '/' . LibrenmsConfig::get('port_descr_parser'))) {
+        // Parse description (usually ifAlias) if config option set.
+        $port_parser_file = LibrenmsConfig::has('port_descr_parser')
+            ? realpath(LibrenmsConfig::get('install_dir') . '/' . LibrenmsConfig::get('port_descr_parser'))
+            : false;
+        $port_parser_base = realpath(LibrenmsConfig::get('install_dir') . '/includes');
+
+        if ($port_parser_file && $port_parser_base
+            && str_starts_with($port_parser_file, $port_parser_base . DIRECTORY_SEPARATOR)
+            && str_ends_with($port_parser_file, '.php')) {
             $port_attribs = [
                 'type',
                 'descr',
@@ -757,12 +759,13 @@ foreach ($ports as $port) {
             ];
 
             $port_ifAlias = []; // for port descr parser mappings
-            $port_parser ??= include LibrenmsConfig::get('install_dir') . '/' . LibrenmsConfig::get('port_descr_parser');
+            $port_parser ??= include $port_parser_file;
 
             // handle functional style parsers
             if (is_callable($port_parser)) {
                 $port_ifAlias = app()->call($port_parser, [
                     'ifAlias' => $this_port['ifAlias'] ?? '',
+                    'ifAlias_override' => $ifAlias_override ?? null,
                     'ifIndex' => $port['ifIndex'] ?? '',
                     'ifName' => $this_port['ifName'] ?? '',
                     'port_id' => $port['port_id'] ?? 0,
@@ -774,6 +777,10 @@ foreach ($ports as $port) {
             foreach ($port_attribs as $attrib) {
                 $attrib_key = 'port_descr_' . $attrib;
                 $attrib_value = $port_ifAlias[$attrib] ?? null;
+                if ($attrib === 'speed') {
+                    // a circuit speed set in the web ui overrides the description
+                    $attrib_value = DeviceCache::getPrimary()->getAttrib('port_descr_speed:' . $port['ifName']) ?? $attrib_value;
+                }
                 if ($attrib_value != $port[$attrib_key]) {
                     $port['update'][$attrib_key] = $attrib_value;
 
@@ -895,7 +902,7 @@ foreach ($ports as $port) {
             $fields['ifOutBits_rate'] = $current_port_stats['ifOutBits_rate'];
 
             if ($tune_port === true) {
-                Rrd::tune('port', $rrdfile, $this_port['ifSpeed']);
+                Rrd::tune($rrdfile, \LibreNMS\RRD\PortRrd::tuneLimits((int) $this_port['ifSpeed']));
             }
 
             $tags = [

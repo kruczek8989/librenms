@@ -26,11 +26,14 @@
 
 namespace App\Http\Controllers\Device\Tabs;
 
+use App\Http\Controllers\Controller;
 use App\Models\Device;
+use App\Models\Pseudowire;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 use LibreNMS\Interfaces\UI\DeviceTab;
 
-class PseudowiresController implements DeviceTab
+class PseudowiresController extends Controller implements DeviceTab
 {
     public function visible(Device $device): bool
     {
@@ -52,8 +55,38 @@ class PseudowiresController implements DeviceTab
         return __('Pseudowires');
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function data(Device $device, Request $request): array
     {
         return [];
+    }
+
+    public function index(Device $device, Request $request): View
+    {
+        $this->authorize('view', $device);
+
+        $request->validate([
+            'view' => 'nullable|in:detail,minigraphs',
+        ]);
+
+        $view = $request->string('view')->value() ?: 'detail';
+
+        return view('device.tabs.pseudowires', [
+            'device' => $device,
+            'view' => $view,
+            'options' => [
+                'detail' => [
+                    'text' => __('Details'),
+                    'link' => route('device.pseudowires', ['device' => $device, 'view' => 'detail']),
+                ],
+                'minigraphs' => [
+                    'text' => __('Mini Graphs'),
+                    'link' => route('device.pseudowires', ['device' => $device, 'view' => 'minigraphs']),
+                ],
+            ],
+            'circuits' => Pseudowire::circuits($request->user(), $device),
+        ]);
     }
 }

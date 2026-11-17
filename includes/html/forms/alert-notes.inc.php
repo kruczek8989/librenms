@@ -24,30 +24,56 @@
  * @author     Neil Lathwood <gh+n@laf.io>
  */
 use App\Models\Alert;
+use App\Models\AlertFault;
+use Illuminate\Support\Facades\Gate;
+use LibreNMS\Alert\AlertUtil;
 
 header('Content-type: application/json');
 
-$alert_id = $vars['alert_id'];
-$sub_type = $vars['sub_type'];
+$alert_id = $vars['alert_id'] ?? null;
+$sub_type = $vars['sub_type'] ?? '';
 $note = isset($vars['note']) ? strip_tags($vars['note']) : '';
-$status = 'error';
 
-if (is_numeric($alert_id)) {
-    if ($sub_type === 'get_note') {
-        $note = Alert::where('id', $alert_id)->value('note');
-        $message = 'Alert note retrieved';
-        $status = 'ok';
-    } else {
-        if (Alert::where('id', $alert_id)->update(['note' => $note])) {
-            $status = 'ok';
-            $message = 'Note updated';
-        } else {
-            $message = 'Could not update note';
-        }
-    }
-} else {
-    $message = 'Invalid alert id';
+if (! is_numeric($alert_id) || ! ($fault = AlertFault::find($alert_id))) {
+    abort(response()->json([
+        'status' => 'error',
+        'message' => 'Invalid alert id',
+        'note' => '',
+    ]));
 }
+
+$alert = Alert::query()->where('rule_id', $fault->rule_id)->where('device_id', $fault->device_id)->first();
+$ability = $sub_type === 'get_note' ? 'view' : 'update';
+if (! $alert || Gate::denies($ability, $alert)) {
+    abort(response()->json([
+        'status' => 'error',
+        'message' => 'You are not authorised to access this alert',
+        'note' => '',
+    ]));
+}
+
+if ($sub_type === 'get_note') {
+    $status = 'ok';
+    $message = 'Alert note retrieved';
+    $note = (string) $fault->note;
+} else {
+    $rule = $fault->rule;
+    $openCount = $rule !== null
+        ? AlertUtil::openEntityCountForRuleDevice($rule->id, (int) $fault->device_id)
+        : 1;
+    $query = ($rule !== null && AlertUtil::shouldNotifyPerEntity($rule, $openCount))
+        ? AlertFault::whereKey($fault->id)
+        : AlertFault::where('rule_id', $fault->rule_id)->where('device_id', $fault->device_id)->where('open', 1);
+
+    if ($query->update(['note' => $note])) {
+        $status = 'ok';
+        $message = 'Note updated';
+    } else {
+        $status = 'error';
+        $message = 'Could not update note';
+    }
+}
+
 exit(json_encode([
     'status' => $status,
     'message' => $message,

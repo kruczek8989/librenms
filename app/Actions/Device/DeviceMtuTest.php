@@ -4,44 +4,37 @@ namespace App\Actions\Device;
 
 use App\Facades\LibrenmsConfig;
 use App\Models\Device;
-use LibreNMS\Polling\ConnectivityHelper;
-use Log;
-use Symfony\Component\Process\Process;
+use LibreNMS\Data\Source\Icmp\Fping;
+use LibreNMS\Enum\PollingMethodType;
+use LibreNMS\Polling\Method\Methods\IcmpPollingMethod;
 
 class DeviceMtuTest
 {
     private readonly ?int $bytes;
+    private readonly IcmpPollingMethod $icmpMethod;
 
-    public function __construct()
-    {
+    public function __construct(
+        private readonly Fping $fping,
+        ?IcmpPollingMethod $icmpMethod = null,
+    ) {
         $this->bytes = LibrenmsConfig::get('mtu_options.bytes');
+        $this->icmpMethod = $icmpMethod ?? app(IcmpPollingMethod::class);
     }
 
     public function execute(Device $device): bool
     {
-        if (! ConnectivityHelper::pingIsAllowed($device)) {
+        if (! $device->polling()->isEnabled(PollingMethodType::Icmp)) {
             return true;
         }
 
-        if ($this->bytes == null) {
+        if ($this->bytes === null) {
             return true;
         }
 
-        $bytes = $this->bytes > 28 ? $this->bytes - 28 : $this->bytes;
-
-        $cmd = array_merge(LibrenmsConfig::fpingCommand($device->ipFamily()), [
-            '-q',
-            '-b',
-            $bytes,
+        return $this->fping->testMtu(
             $device->pollerTarget(),
-        ]);
-
-        Log::debug('[MTU] ' . implode(' ', $cmd) . PHP_EOL);
-
-        $fping = new Process($cmd);
-        $fping->disableOutput();
-        $fping->run();
-
-        return $fping->isSuccessful();
+            $this->bytes,
+            $this->icmpMethod->resolveAddressFamily($device),
+        );
     }
 }

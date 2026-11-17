@@ -27,13 +27,14 @@
 namespace App\Http\Controllers\Device\Tabs;
 
 use App\Facades\LibrenmsConfig;
+use App\Http\Controllers\Controller;
 use App\Models\Device;
 use App\Models\Link;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 use LibreNMS\Interfaces\UI\DeviceTab;
-use LibreNMS\Util\Url;
 
-class NeighboursController implements DeviceTab
+class NeighboursController extends Controller implements DeviceTab
 {
     public function visible(Device $device): bool
     {
@@ -55,15 +56,23 @@ class NeighboursController implements DeviceTab
         return __('Neighbours');
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function data(Device $device, Request $request): array
     {
-        $selection = Url::parseOptions('selection', 'list');
+        return [];
+    }
 
-        $devices[$device->device_id] = [
-            'url' => Url::deviceLink($device, null, [], 0, 0, 0, 1),
-            'hw' => $device->hardware,
-            'name' => $device->shortDisplayName(),
-        ];
+    public function index(Device $device, Request $request): View
+    {
+        $this->authorize('view', $device);
+
+        $request->validate([
+            'selection' => 'nullable|in:list,map',
+        ]);
+
+        $selection = $request->string('selection')->value() ?: 'list';
 
         if ($selection == 'list') {
             $linksQuery = $device->links()->with('port', 'remoteDevice', 'remotePort');
@@ -73,22 +82,22 @@ class NeighboursController implements DeviceTab
             $links = [];
         }
 
-        return [
+        return view('device.tabs.neighbours', [
             'selections' => [
                 'list' => [
                     'text' => 'List',
-                    'link' => route('device', ['device' => $device, 'tab' => 'neighbours', 'vars' => 'selection=list']),
+                    'link' => route('device.neighbours', ['device' => $device, 'selection' => 'list']),
                 ],
                 'map' => [
                     'text' => 'Map',
-                    'link' => route('device', ['device' => $device, 'tab' => 'neighbours', 'vars' => 'selection=map']),
+                    'link' => route('device.neighbours', ['device' => $device, 'selection' => 'map']),
                 ],
             ],
             'selection' => $selection,
             'device' => $device,
             'links' => $links,
             'link_types' => LibrenmsConfig::get('network_map_items', ['xdp', 'mac']),
-            'visoptions' => LibrenmsConfig::get('network_map_vis_options'),
-        ];
+            'visoptions' => \LibreNMS\Util\NetworkMapOptions::networkMap(),
+        ]);
     }
 }

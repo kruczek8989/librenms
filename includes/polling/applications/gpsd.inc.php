@@ -53,6 +53,7 @@
 }
 */
 
+use Illuminate\Support\Facades\Log;
 use LibreNMS\Exceptions\JsonAppException;
 use LibreNMS\Exceptions\JsonAppParsingFailedException;
 use LibreNMS\RRD\RrdDefinition;
@@ -111,7 +112,7 @@ if (! empty($agent_data['app'][$name])) {
     } catch (JsonAppException $e) {
         // Set Empty metrics and error message
 
-        echo PHP_EOL . $name . ':' . $e->getCode() . ':' . $e->getMessage() . PHP_EOL;
+        Log::info($name . ':' . $e->getCode() . ':' . $e->getMessage());
         update_application($app, $e->getCode() . ':' . $e->getMessage(), []);
 
         return;
@@ -150,8 +151,8 @@ $basic_rrd_def = RrdDefinition::make()
     ->addDataset('mode', 'GAUGE', 0, 4)
     ->addDataset('hdop', 'GAUGE', 0, 100)
     ->addDataset('vdop', 'GAUGE', 0, 100)
-    ->addDataset('satellites', 'GAUGE', 0, 40)
-    ->addDataset('satellites_used', 'GAUGE', 0, 40);
+    ->addDataset('satellites', 'GAUGE', 0, 200)
+    ->addDataset('satellites_used', 'GAUGE', 0, 200);
 
 // Update basic RRD
 $basic_tags = [

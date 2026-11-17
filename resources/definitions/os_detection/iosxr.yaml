@@ -25,9 +25,11 @@ discovery_modules:
     slas: true
     cisco-otv: true
     cisco-pw: true
-    vrf: true
-    cisco-vrf-lite: true
 discovery:
     -
         sysDescr:
             - 'IOS XR'
+bad_iftype:
+    - macSecControlledIF
+    - macSecUncontrolledIF
+    - opticalChannel

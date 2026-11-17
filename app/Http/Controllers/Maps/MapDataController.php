@@ -39,6 +39,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use LibreNMS\Enum\DeviceType;
 use LibreNMS\Enum\IfOperStatus;
 
 class MapDataController extends Controller
@@ -458,6 +459,8 @@ class MapDataController extends Controller
     // GET Device
     public function getDevices(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Device::class);
+
         // Get all device ids under maintenance (may contain duplicates, but we don't care for this usage)
         $deviceIdsUnderMaintenance = AlertSchedule::isActive()
             ->with([
@@ -485,12 +488,12 @@ class MapDataController extends Controller
                 $updowntime = '';
             }
 
-            $deviceTypes = collect(LibrenmsConfig::get('device_types', []))->pluck('icon', 'type');
+            $deviceTypes = DeviceType::icons();
 
             $device_list[$device->device_id] = [
                 'id' => $device->device_id,
                 'icon' => $device->icon,
-                'typeIcon' => $deviceTypes->get($device->type, 'server'),
+                'typeIcon' => $deviceTypes[$device->type] ?? 'server',
                 'icontitle' => $device->icon ? str_replace(['.svg', '.png'], '', basename((string) $device->icon)) : $device->os,
                 'sname' => $device->shortDisplayName(),
                 'status' => $device->status,
@@ -499,7 +502,7 @@ class MapDataController extends Controller
                 'last_polled' => $device->last_polled,
                 'disabled' => $device->disabled,
                 'no_alerts' => $device->disable_notify,
-                'url' => $request->url_type == 'links' ? \Blade::render('<x-device-link-map :device="$device" />', ['device' => $device]) : route('device', ['device' => $device->device_id]),
+                'url' => route('device', ['device' => $device->device_id]),
                 'style' => self::deviceStyle($device, $request->highlight_node),
                 'lat' => $device->location ? $device->location->lat : null,
                 'lng' => $device->location ? $device->location->lng : null,
@@ -522,7 +525,7 @@ class MapDataController extends Controller
                     $parent_only_ids = $parent_only_ids->filter(fn (int $parent_id, int $k) => ! $child_ids->has($parent_id));
                 }
 
-                // All parents are peers becuase they are also children
+                // All parents are peers because they are also children
                 if (! $parent_only_ids->count()) {
                     $parent_peer_devices->put($device->device_id, $device->device_id);
                 }
@@ -619,6 +622,13 @@ class MapDataController extends Controller
                     $this_children = $next_children;
                 }
             }
+
+            if ($request->boolean('hide_isolated')) {
+                $device_list = array_filter(
+                    $device_list,
+                    fn (array $device): bool => $device['parents']->isNotEmpty() || $device['children']->isNotEmpty()
+                );
+            }
         }
 
         return response()->json($device_list);
@@ -627,6 +637,8 @@ class MapDataController extends Controller
     // GET Device Links by device
     public function getDeviceLinks(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Device::class);
+
         // List all links
         $link_list = [];
         $port_assoc_seen = [];
@@ -713,7 +725,6 @@ class MapDataController extends Controller
                         'ldev' => $port->device_id,
                         'rdev' => $remote_port->device_id,
                         'ifnames' => $port->ifName . ' <> ' . $remote_port->ifName,
-                        'url' => \Blade::render('<x-port-link-map :port="$port" />', ['port' => $port]),
                         'style' => $link_style,
                     ];
                 }
@@ -726,6 +737,8 @@ class MapDataController extends Controller
     // GET Device Links grouped by geographic locations
     public function getGeographicLinks(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Device::class);
+
         // List all links
         $link_list = [];
         foreach (self::geoLinks($request) as $location) {
@@ -760,6 +773,8 @@ class MapDataController extends Controller
     // GET Device services
     public function getServices(Request $request): JsonResponse
     {
+        $this->authorize('viewAny', Service::class);
+
         $group_id = $request->device_group;
         $services = Service::hasAccess($request->user())->with('device');
 
@@ -785,7 +800,7 @@ class MapDataController extends Controller
                 'icon' => $service->device->icon,
                 'icontitle' => $service->device->icon ? str_replace(['.svg', '.png'], '', basename((string) $service->device->icon)) : $service->device->os,
                 'device_name' => $service->device->shortDisplayName(),
-                'url' => \Blade::render('<x-device-link-map :device="$device" />', ['device' => $service->device]),
+                'url' => route('device', ['device' => $service->device_id]),
                 'updowntime' => $updowntime,
                 'compact' => LibrenmsConfig::get('webui.availability_map_compact'),
                 'box_size' => LibrenmsConfig::get('webui.availability_map_box_size'),

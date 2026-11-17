@@ -28,22 +28,47 @@ namespace LibreNMS\Alert;
 
 use App\Facades\LibrenmsConfig;
 use App\Models\Alert;
+use App\Models\AlertFault;
 use App\Models\AlertOperationSegment;
 use App\Models\AlertRule;
-use App\Models\Device;
+use App\Models\BgpPeer;
 use App\Models\DeviceGroup;
+use App\Models\Mempool;
+use App\Models\Processor;
+use App\Models\Sensor;
 use App\Models\User;
+use App\Models\WirelessSensor;
+use Illuminate\Database\Eloquent\Model;
 use DeviceCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use LibreNMS\Enum\AlertRuleOperationPhase;
+use LibreNMS\Enum\AlertState;
 use LibreNMS\Enum\MaintenanceStatus;
 use PHPMailer\PHPMailer\PHPMailer;
 
 class AlertUtil
 {
+    /**
+     * Map of alert-query id columns to registered morph aliases (see AppServiceProvider).
+     * Used to resolve the entity a problem is about (Port, Sensor, ...).
+     */
+    private const array ENTITY_COLUMN_MAP = [
+        'port_id' => 'interface',
+        'sensor_id' => 'sensor',
+        'bgpPeer_id' => 'bgppeer',
+        'service_id' => 'service',
+        'mempool_id' => 'mempool',
+        'processor_id' => 'processor',
+        'storage_id' => 'storage',
+        'app_id' => 'application',
+        'accesspoint_id' => 'accesspoint',
+        'bill_id' => 'bill',
+        'device_group_id' => 'device_group',
+        'location_id' => 'location',
+    ];
+
     /**
      * Get the rule_id for a specific alert
      *
@@ -53,6 +78,277 @@ class AlertUtil
     private static function getRuleId($alert_id)
     {
         return Alert::find($alert_id)?->rule_id;
+    }
+
+    /**
+     * @param  array<string, mixed>  $element
+     * @return array<int, string>
+     */
+    public static function extractIdFieldsForFault(array $element): array
+    {
+        return array_filter(array_keys($element), fn ($key) =>
+            // Exclude location_id as it is not relevant for the comparison
+            ($key === 'id' || strpos((string) $key, '_id')) !== false && $key !== 'location_id');
+    }
+
+    /**
+     * @param  array<string, mixed>  $element
+     * @param  array<int, string>  $idFields
+     */
+    public static function generateComparisonKeyForFault(array $element, array $idFields): string
+    {
+        $keyParts = [];
+        foreach ($idFields as $field) {
+            $keyParts[] = $element[$field] ?? '';
+        }
+
+        return implode('|', $keyParts);
+    }
+
+    /**
+     * Stable entity identity for alert rule rows (alert_faults.entity_key / morph resolution).
+     * Ordered: first matching profile wins. Add entries here instead of one-off row checks.
+     *
+     * @return list<array{
+     *     key_prefix: string,
+     *     trigger: string,
+     *     columns: list<string>,
+     *     model?: class-string<Model>|null,
+     *     alias?: string|null,
+     *     id_column?: string|null,
+     *     lookup_columns?: list<string>|null,
+     *     skip_if_model_matches?: class-string<Model>|null,
+     *     entity_only?: bool,
+     * }>
+     */
+    private static function entityIdentityRegistry(): array
+    {
+        return [
+            [
+                'key_prefix' => 'bgppeer',
+                'trigger' => 'bgpPeerIdentifier',
+                'columns' => ['device_id', 'context_name', 'bgpPeerIdentifier'],
+                'model' => BgpPeer::class,
+                'alias' => 'bgppeer',
+                'id_column' => 'bgpPeer_id',
+                'lookup_columns' => ['device_id', 'context_name', 'bgpPeerIdentifier'],
+            ],
+            [
+                'key_prefix' => 'sensor',
+                'trigger' => 'sensor_index',
+                'columns' => ['device_id', 'poller_type', 'sensor_class', 'sensor_type', 'sensor_index'],
+                'model' => Sensor::class,
+                'alias' => 'sensor',
+                'id_column' => 'sensor_id',
+                'lookup_columns' => ['poller_type', 'sensor_class', 'sensor_type', 'sensor_index'],
+                'skip_if_model_matches' => WirelessSensor::class,
+            ],
+            [
+                'key_prefix' => 'wireless_sensor',
+                'trigger' => 'sensor_index',
+                'columns' => ['device_id', 'poller_type', 'sensor_class', 'sensor_type', 'sensor_index'],
+                'model' => WirelessSensor::class,
+                'alias' => null,
+                'id_column' => 'sensor_id',
+                'lookup_columns' => ['poller_type', 'sensor_class', 'sensor_type', 'sensor_index'],
+                'entity_only' => true,
+            ],
+            [
+                'key_prefix' => 'mempool',
+                'trigger' => 'mempool_index',
+                'columns' => ['device_id', 'mempool_type', 'mempool_class', 'mempool_index'],
+                'model' => Mempool::class,
+                'alias' => 'mempool',
+                'id_column' => 'mempool_id',
+                'lookup_columns' => ['mempool_type', 'mempool_class', 'mempool_index'],
+            ],
+            [
+                'key_prefix' => 'processor',
+                'trigger' => 'processor_index',
+                'columns' => ['device_id', 'processor_type', 'processor_index'],
+                'model' => Processor::class,
+                'alias' => 'processor',
+                'id_column' => 'processor_id',
+                'lookup_columns' => ['processor_type', 'processor_index'],
+            ],
+        ];
+    }
+
+    /**
+     * Stable reconciliation key for a rule result row (stored as alert_faults.entity_key).
+     *
+     * @param  array<string, mixed>  $row
+     */
+    public static function faultKeyForRow(array $row): string
+    {
+        $profile = self::matchIdentityProfile($row, forEntityKey: true);
+        if ($profile !== null) {
+            return self::faultKeyFromProfile($row, $profile);
+        }
+
+        return self::generateComparisonKeyForFault($row, self::extractIdFieldsForFault($row));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array{0: ?string, 1: ?int}
+     */
+    public static function entityForFault(array $row): array
+    {
+        $profile = self::matchIdentityProfile($row, forEntityKey: false);
+        if ($profile !== null) {
+            return self::entityFromProfile($row, $profile);
+        }
+
+        foreach (self::ENTITY_COLUMN_MAP as $column => $alias) {
+            if (! empty($row[$column])) {
+                return [$alias, (int) $row[$column]];
+            }
+        }
+
+        foreach ($row as $key => $value) {
+            if ($key === 'device_id' || $key === 'location_id' || empty($value)) {
+                continue;
+            }
+            if ($key === 'id' || str_ends_with((string) $key, '_id')) {
+                $alias = $key === 'id' ? null : substr((string) $key, 0, -3);
+
+                return [$alias, (int) $value];
+            }
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>|null
+     */
+    private static function matchIdentityProfile(array $row, bool $forEntityKey): ?array
+    {
+        foreach (self::entityIdentityRegistry() as $profile) {
+            if (($profile['entity_only'] ?? false) && $forEntityKey) {
+                continue;
+            }
+
+            if (! self::identityTriggerPresent($row, $profile['trigger'])) {
+                continue;
+            }
+
+            if (! $forEntityKey) {
+                $skipModel = $profile['skip_if_model_matches'] ?? null;
+                if ($skipModel !== null && self::lookupEntityPrimaryKey($skipModel, $row, self::lookupColumnsForProfile($profile)) !== null) {
+                    continue;
+                }
+            }
+
+            return $profile;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private static function identityTriggerPresent(array $row, string $trigger): bool
+    {
+        if (! array_key_exists($trigger, $row)) {
+            return false;
+        }
+
+        $value = $row[$trigger];
+
+        return $value !== null && $value !== '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $profile
+     */
+    private static function faultKeyFromProfile(array $row, array $profile): string
+    {
+        $parts = [(string) $profile['key_prefix']];
+        foreach ($profile['columns'] as $column) {
+            $parts[] = (string) ($row[$column] ?? '');
+        }
+
+        return implode('|', $parts);
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $profile
+     * @return array{0: ?string, 1: ?int}
+     */
+    private static function entityFromProfile(array $row, array $profile): array
+    {
+        $alias = $profile['alias'] ?? null;
+        $modelClass = $profile['model'] ?? null;
+        if ($modelClass !== null) {
+            $entityId = self::lookupEntityPrimaryKey($modelClass, $row, self::lookupColumnsForProfile($profile));
+            if ($entityId !== null && $alias !== null) {
+                return [$alias, $entityId];
+            }
+        }
+
+        $idColumn = $profile['id_column'] ?? null;
+        if ($alias !== null && $idColumn !== null && ! empty($row[$idColumn])) {
+            return [$alias, (int) $row[$idColumn]];
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return list<string>
+     */
+    private static function lookupColumnsForProfile(array $profile): array
+    {
+        return $profile['lookup_columns'] ?? $profile['columns'];
+    }
+
+    /**
+     * @param  class-string<Model>  $modelClass
+     * @param  array<string, mixed>  $row
+     * @param  list<string>  $identityColumns
+     */
+    private static function lookupEntityPrimaryKey(string $modelClass, array $row, array $identityColumns): ?int
+    {
+        $deviceId = (int) ($row['device_id'] ?? 0);
+        if ($deviceId <= 0) {
+            return null;
+        }
+
+        try {
+            $query = $modelClass::query()->where('device_id', $deviceId);
+
+            foreach ($identityColumns as $field) {
+                if ($field === 'device_id') {
+                    continue;
+                }
+                if (! array_key_exists($field, $row)) {
+                    continue;
+                }
+                $value = $row[$field];
+                if ($field === 'context_name' && ($value === null || $value === '')) {
+                    $query->where(function ($q): void {
+                        $q->where('context_name', '')->orWhereNull('context_name');
+                    });
+                    continue;
+                }
+                if ($value !== null && $value !== '') {
+                    $query->where($field, $value);
+                }
+            }
+
+            $id = $query->value((new $modelClass)->getKeyName());
+
+            return $id !== null ? (int) $id : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -78,79 +374,201 @@ class AlertUtil
         return AlertRule::find($ruleId)?->alert_operation_id !== null;
     }
 
-    /**
-     * Merge timing for the problem phase from alert_rule_operations into $rextra
-     * (delay, interval, count) so RunAlerts can reuse existing scheduling logic.
-     * When the rule has no operations at all, notifications are treated as suppressed (mute).
-     *
-     * @param  array<string, mixed>  $details  alert_log details (decoded)
-     * @param  array<string, mixed>  $rextra  rule extra (decoded)
-     */
-    public static function mergeProblemPhaseTimingFromOperations(int $ruleId, array &$details, array &$rextra): void
+    public static function operationNotificationsSuppressed(int $ruleId): bool
     {
-        unset($rextra['_stop_notifications']);
+        $rule = AlertRule::query()
+            ->with('alertOperation:id,notifications_suppressed')
+            ->whereKey($ruleId)
+            ->first(['id', 'alert_operation_id']);
 
-        $ruleRow = AlertRule::query()
+        if ($rule === null || $rule->alert_operation_id === null) {
+            return true;
+        }
+
+        return $rule->alertOperation === null || (bool) $rule->alertOperation->notifications_suppressed;
+    }
+
+    /**
+     * Whether a recovery notification may be sent. Shares the main loop's extra.recovery /
+     * extra.mute / maintenance gates and {@see ruleHasAlertOperations()} /
+     * {@see operationNotificationsSuppressed()} (an orphaned alert_operation_id is suppressed).
+     */
+    public static function shouldSendRecovery(int $ruleId, ?int $deviceId = null): bool
+    {
+        $rule = AlertRule::query()->whereKey($ruleId)->first(['id', 'alert_operation_id', 'disabled', 'extra']);
+        if ($rule === null || $rule->disabled) {
+            return false;
+        }
+
+        $extra = is_array($rule->extra) ? $rule->extra : [];
+        $extra['recovery'] ??= true;
+        if ($extra['recovery'] == false || ! empty($extra['mute'])) {
+            return false;
+        }
+
+        if (self::ruleHasAlertOperations($ruleId) && self::operationNotificationsSuppressed($ruleId)) {
+            return false;
+        }
+
+        if ($deviceId !== null) {
+            $maintenance = DeviceCache::get($deviceId)->getMaintenanceStatus();
+            if ($maintenance == MaintenanceStatus::MuteAlerts || $maintenance == MaintenanceStatus::SkipAlerts) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Independent per-segment scheduler for the problem phase.
+     *
+     * Each segment runs its own timer measured from when the alert started (anchor):
+     *  - the first notification is due after `start_in_seconds`
+     *  - subsequent notifications repeat every `step_duration_seconds`
+     *  - `escalation_step_from`/`escalation_step_to` cap how many times the segment fires
+     *    (to = null means it fires for as long as the alert is active)
+     *
+     * @param  array<string, mixed>  $details  alert_log details (decoded, mutated in place)
+     * @return array<int, int> segment ids due to fire this cycle
+     */
+    public static function dueProblemSegments(int $ruleId, array &$details): array
+    {
+        $rule = AlertRule::query()
             ->with('alertOperation:id,default_operation_step_duration_seconds')
             ->whereKey($ruleId)
             ->first(['id', 'alert_operation_id']);
-        if ($ruleRow === null || $ruleRow->alert_operation_id === null) {
-            $rextra['mute'] = true;
 
-            return;
+        if ($rule === null || $rule->alert_operation_id === null) {
+            return [];
         }
 
-        $ops = AlertOperationSegment::where('alert_operation_id', $ruleRow->alert_operation_id)
+        $segments = AlertOperationSegment::where('alert_operation_id', $rule->alert_operation_id)
             ->where('operation_phase', AlertRuleOperationPhase::PROBLEM)
             ->orderBy('position')
             ->orderBy('id')
             ->get();
 
-        if ($ops->isEmpty()) {
-            return;
+        if ($segments->isEmpty()) {
+            return [];
         }
 
-        $opDefault = $ruleRow->alertOperation?->default_operation_step_duration_seconds;
-        if ($opDefault === null) {
-            $opDefault = max(0, 60 * (int) LibrenmsConfig::get('alert_rule.default_operation_step_duration', LibrenmsConfig::get('alert_rule.interval')));
-        }
+        $opDefault = $rule->alertOperation?->default_operation_step_duration_seconds;
+        $opDefault ??= max(0, 60 * (int) LibrenmsConfig::get('alert_rule.default_operation_step_duration', LibrenmsConfig::get('alert_rule.interval')));
         $defaultStep = max(0, (int) $opDefault);
 
-        $notificationCount = (int) ($details['count'] ?? 0);
-        $nextStep = $notificationCount + 1;
+        $now = time();
+        $tolerance = (int) LibrenmsConfig::get('alert.tolerance_window');
 
-        $op = self::selectOperationForEscalationStep($ops, $nextStep);
-        if ($op === null) {
-            $rextra['_stop_notifications'] = true;
-
-            return;
+        $anchor = (int) ($details['op_anchor'] ?? 0);
+        if ($anchor <= 0) {
+            $anchor = $now;
+            $details['op_anchor'] = $anchor;
         }
 
-        $rextra['delay'] = $notificationCount === 0 ? (int) $op->start_in_seconds : 0;
-        $stepDur = (int) $op->step_duration_seconds;
-        $rextra['interval'] = $stepDur > 0 ? $stepDur : $defaultStep;
-        // Keep legacy runAlerts() counter incrementing for escalation tracking.
-        $rextra['count'] = PHP_INT_MAX;
+        if (! isset($details['op_seg']) || ! is_array($details['op_seg'])) {
+            $details['op_seg'] = [];
+        }
+
+        $segmentData = $segments->map(static fn (AlertOperationSegment $segment) => [
+            'id' => (int) $segment->id,
+            'escalation_step_from' => (int) $segment->escalation_step_from,
+            'escalation_step_to' => $segment->escalation_step_to === null ? null : (int) $segment->escalation_step_to,
+            'start_in_seconds' => (int) $segment->start_in_seconds,
+            'step_duration_seconds' => (int) $segment->step_duration_seconds,
+        ])->all();
+
+        [$due, $details['op_seg']] = self::evaluateSegmentTimers($segmentData, $details['op_seg'], $anchor, $now, $tolerance, $defaultStep);
+
+        return $due;
     }
 
-    public static function selectOperationForEscalationStep(Collection $operations, int $escalationStep): ?AlertOperationSegment
+    /**
+     * For each segment, the first notification is due at `anchor + start_in_seconds`, then it repeats
+     * every `step_duration_seconds` measured from its previous fire (so a paused poller catches up one
+     * notification per cycle rather than bursting). `escalation_step_from`/`escalation_step_to` only cap
+     * how many times a segment may fire (to = null means unlimited); they do not affect the timing.
+     *
+     * @param  array<int, array{id:int, escalation_step_from:int, escalation_step_to:int|null, start_in_seconds:int, step_duration_seconds:int}>  $segments
+     * @param  array<string, array{fires:int, last:int}>  $state  per-segment timer state keyed by segment id
+     * @return array{0: array<int, int>, 1: array<string, array{fires:int, last:int}>} [due segment ids, updated state]
+     */
+    public static function evaluateSegmentTimers(array $segments, array $state, int $anchor, int $now, int $tolerance, int $defaultStep): array
     {
-        foreach ($operations as $op) {
-            $from = (int) $op->escalation_step_from;
-            $to = $op->escalation_step_to === null ? null : (int) $op->escalation_step_to;
-            if ($escalationStep < $from) {
-                continue;
-            }
-            if ($to !== null && $escalationStep > $to) {
+        $due = [];
+        foreach ($segments as $segment) {
+            $from = max(1, (int) $segment['escalation_step_from']);
+            $to = $segment['escalation_step_to'] === null ? null : (int) $segment['escalation_step_to'];
+            $maxFires = $to === null ? PHP_INT_MAX : max(0, $to - $from + 1);
+            if ($maxFires <= 0) {
                 continue;
             }
 
-            if ($op instanceof AlertOperationSegment) {
-                return $op;
+            $startIn = max(0, (int) $segment['start_in_seconds']);
+            $stepDuration = (int) $segment['step_duration_seconds'];
+            $stepDuration = $stepDuration > 0 ? $stepDuration : $defaultStep;
+
+            $key = (string) $segment['id'];
+            $segmentState = $state[$key] ?? ['fires' => 0, 'last' => 0];
+            $fires = (int) ($segmentState['fires'] ?? 0);
+            $last = (int) ($segmentState['last'] ?? 0);
+            if ($fires >= $maxFires) {
+                continue;
+            }
+
+            // First fire is anchored to the alert start; later fires repeat from the previous
+            // fire so a late/paused poller catches up one notification per cycle instead of bursting.
+            $dueAt = $fires === 0 ? ($anchor + $startIn) : ($last + max(1, $stepDuration));
+            if (($now + $tolerance) >= $dueAt) {
+                $due[] = (int) $segment['id'];
+                $state[$key] = ['fires' => $fires + 1, 'last' => $now];
             }
         }
 
-        return null;
+        return [$due, $state];
+    }
+
+    /**
+     * Resolve the (deduplicated) transports for a set of operation segments, expanding groups.
+     *
+     * @param  array<int, int>  $segmentIds
+     * @return array<int, array<string, mixed>>
+     */
+    public static function segmentTransports(array $segmentIds): array
+    {
+        $segmentIds = array_values(array_unique(array_map(intval(...), $segmentIds)));
+        if (empty($segmentIds)) {
+            return [];
+        }
+
+        $single = DB::table('alert_operation_transport_map as m')
+            ->join('alert_transports as b', 'b.transport_id', '=', 'm.transport_or_group_id')
+            ->where('m.target_type', '=', 'single')
+            ->whereIn('m.segment_id', $segmentIds)
+            ->select(['b.transport_id', 'b.transport_type', 'b.transport_name'])
+            ->distinct()
+            ->get();
+
+        $group = DB::table('alert_operation_transport_map as m')
+            ->join('alert_transport_groups as g', 'g.transport_group_id', '=', 'm.transport_or_group_id')
+            ->join('transport_group_transport as c', 'c.transport_group_id', '=', 'g.transport_group_id')
+            ->join('alert_transports as d', 'd.transport_id', '=', 'c.transport_id')
+            ->where('m.target_type', '=', 'group')
+            ->whereIn('m.segment_id', $segmentIds)
+            ->select(['d.transport_id', 'd.transport_type', 'd.transport_name'])
+            ->distinct()
+            ->get();
+
+        return $single
+            ->concat($group)
+            ->unique('transport_id')
+            ->values()
+            ->map(static fn ($row) => [
+                'transport_id' => (int) $row->transport_id,
+                'transport_type' => (string) $row->transport_type,
+                'transport_name' => (string) $row->transport_name,
+            ])
+            ->all();
     }
 
     /**
@@ -246,18 +664,6 @@ class AlertUtil
     }
 
     /**
-     * Returns the default transports
-     *
-     * @return array
-     */
-    public static function getDefaultAlertTransports()
-    {
-        $query = 'SELECT transport_id, transport_type, transport_name FROM alert_transports WHERE is_default=true';
-
-        return dbFetchRows($query);
-    }
-
-    /**
      * Find contacts for alert
      *
      * @param  array  $results  Rule-Result
@@ -343,7 +749,9 @@ class AlertUtil
             $email = $device->getAttrib('override_sysContact_bool')
                 ? $device->getAttrib('override_sysContact_string')
                 : $device->sysContact;
-            $contacts[$email] = '';
+            if ($email) {
+                $contacts[$email] = '';
+            }
         }
 
         return $contacts;
@@ -364,49 +772,6 @@ class AlertUtil
                 $query->orWhereHas('bills', fn ($q) => $q->whereIn('bill_perms.bill_id', $bill_ids));
             }
         })->pluck('realname', 'email')->all();
-    }
-
-    public static function getRules($device_id)
-    {
-        $query = 'SELECT DISTINCT a.* FROM alert_rules a
-        LEFT JOIN alert_device_map d ON a.id=d.rule_id AND (a.invert_map = 0 OR a.invert_map = 1 AND d.device_id = ?)
-        LEFT JOIN alert_group_map g ON a.id=g.rule_id AND (a.invert_map = 0 OR a.invert_map = 1 AND g.group_id IN (SELECT DISTINCT device_group_id FROM device_group_device WHERE device_id = ?))
-        LEFT JOIN alert_location_map l ON a.id=l.rule_id AND (a.invert_map = 0 OR a.invert_map = 1 AND l.location_id IN (SELECT DISTINCT location_id FROM devices WHERE device_id = ?))
-        LEFT JOIN devices ld ON l.location_id=ld.location_id AND ld.device_id = ?
-        LEFT JOIN device_group_device dg ON g.group_id=dg.device_group_id AND dg.device_id = ?
-        WHERE a.disabled = 0 AND (
-            (d.device_id IS NULL AND g.group_id IS NULL AND l.location_id IS NULL)
-            OR (a.invert_map = 0 AND (d.device_id=? OR dg.device_id=? OR ld.device_id=?))
-            OR (a.invert_map = 1  AND (d.device_id != ? OR d.device_id IS NULL) AND (dg.device_id != ? OR dg.device_id IS NULL) AND (ld.device_id != ? OR ld.device_id IS NULL))
-        )';
-
-        $params = [$device_id, $device_id, $device_id, $device_id, $device_id, $device_id, $device_id, $device_id, $device_id, $device_id, $device_id];
-
-        return dbFetchRows($query, $params);
-    }
-
-    /**
-     * Check if device is under maintenance
-     *
-     * @param  int  $device_id  Device-ID
-     * @return MaintenanceStatus
-     */
-    public static function getMaintenanceStatus($device_id): MaintenanceStatus
-    {
-        return DeviceCache::get($device_id)->getMaintenanceStatus();
-    }
-
-    /**
-     * Check if device is set to ignore alerts
-     *
-     * @param  int  $device_id  Device-ID
-     * @return bool
-     */
-    public static function hasDisableNotify($device_id)
-    {
-        $device = Device::find($device_id);
-
-        return ! is_null($device) && $device->disable_notify;
     }
 
     /**
@@ -434,5 +799,56 @@ class AlertUtil
         }
 
         return $rule;
+    }
+
+    public static function defaultMaxEntities(): int
+    {
+        return max(1, (int) LibrenmsConfig::get('alert_rule.default_max_entities', 20));
+    }
+
+    public static function maxEntitiesForRule(AlertRule $rule): int
+    {
+        if ($rule->max_entities !== null) {
+            return max(1, (int) $rule->max_entities);
+        }
+
+        return self::defaultMaxEntities();
+    }
+
+    public static function openEntityCountForRuleDevice(int $ruleId, int $deviceId): int
+    {
+        return AlertFault::query()
+            ->where('rule_id', $ruleId)
+            ->where('device_id', $deviceId)
+            ->where('open', 1)
+            ->where('state', '!=', AlertState::RECOVERED)
+            ->count();
+    }
+
+    /**
+     * Per-entity notify is only effective while open entity count is within the rule limit.
+     */
+    public static function shouldNotifyPerEntity(AlertRule $rule, int $openEntityCount): bool
+    {
+        if (! $rule->notify_per_entity) {
+            return false;
+        }
+
+        return $openEntityCount <= self::maxEntitiesForRule($rule);
+    }
+
+    public static function shouldGroupFaultDetails(AlertRule $rule, int $entityCount): bool
+    {
+        return ! self::shouldNotifyPerEntity($rule, $entityCount);
+    }
+
+    /**
+     * SQL fragment: count of open, non-recovered faults for the same rule+device as {@see $faultsAlias}.
+     */
+    public static function sqlOpenFaultCountForRow(string $faultsAlias = 'alert_faults'): string
+    {
+        return '(select count(*) from alert_faults f_count where f_count.device_id = ' . $faultsAlias . '.device_id'
+            . ' and f_count.rule_id = ' . $faultsAlias . '.rule_id and f_count.open = 1 and f_count.state != '
+            . AlertState::RECOVERED . ')';
     }
 }

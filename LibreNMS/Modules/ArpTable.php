@@ -11,17 +11,19 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use LibreNMS\DB\SyncsModels;
+use LibreNMS\Enum\PollingMethodType;
 use LibreNMS\Interfaces\Data\DataStorageInterface;
 use LibreNMS\Interfaces\Discovery\ArpTableDiscovery;
 use LibreNMS\Interfaces\Module;
 use LibreNMS\OS;
-use LibreNMS\Polling\ModuleStatus;
+use LibreNMS\Traits\RequiresPollingMethod;
 use LibreNMS\Util\Mac;
 use SnmpQuery;
 
 class ArpTable implements Module
 {
     use SyncsModels;
+    use RequiresPollingMethod;
 
     /**
      * @inheritDoc
@@ -31,20 +33,9 @@ class ArpTable implements Module
         return ['ports'];
     }
 
-    /**
-     * @inheritDoc
-     */
-    public function shouldDiscover(OS $os, ModuleStatus $status): bool
+    public function pollingMethods(Device $device): array
     {
-        return $status->isEnabledAndDeviceUp($os->getDevice());
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function shouldPoll(OS $os, ModuleStatus $status): bool
-    {
-        return $status->isEnabledAndDeviceUp($os->getDevice());
+        return [PollingMethodType::Snmp];
     }
 
     /**
@@ -57,7 +48,7 @@ class ArpTable implements Module
             : $this->discoverArpFromIpMib($os->getDevice());
 
         ModuleModelObserver::observe(Ipv4Mac::class);
-        $this->syncModels($os->getDevice(), 'macs', $arp);
+        $this->syncVrfContextModels($os->getDevice(), 'macs', $arp);
     }
 
     /**

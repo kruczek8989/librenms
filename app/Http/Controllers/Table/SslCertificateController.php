@@ -4,18 +4,23 @@ namespace App\Http\Controllers\Table;
 
 use App\Facades\LibrenmsConfig;
 use App\Models\SslCertificate;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 
+/**
+ * @extends TableController<SslCertificate>
+ */
 class SslCertificateController extends TableController
 {
-    protected $model = SslCertificate::class;
+    protected ?string $model = SslCertificate::class;
 
     public function searchFields(Request $request): array
     {
         return ['host', 'subject', 'issuer'];
     }
 
-    protected function sortFields($request)
+    protected function sortFields(Request $request): array
     {
         return [
             'id',
@@ -30,16 +35,19 @@ class SslCertificateController extends TableController
         ];
     }
 
-    public function baseQuery(Request $request)
+    public function baseQuery(Request $request): Builder
     {
-        return SslCertificate::hasAccess($request->user())->with('device:device_id,hostname');
+        $this->authorize('viewAny', SslCertificate::class);
+
+        return SslCertificate::hasAccess($request->user())
+            ->with('device:device_id,hostname');
     }
 
     /**
      * @param  SslCertificate  $model
-     * @return array<string, mixed>
+     * @return array<string, scalar>
      */
-    public function formatItem($model)
+    public function formatItem(Model $model): array
     {
         $sslCertificate = $model;
         $daysWarning = (int) LibrenmsConfig::get('ssl_certificates.days_until_expiry_warning', 30);
@@ -49,7 +57,7 @@ class SslCertificateController extends TableController
             $deviceLink = '<a href="' . url('device/' . $sslCertificate->device_id) . '">' . e($sslCertificate->device->hostname) . '</a>';
         }
 
-        $validTo = $sslCertificate->valid_to !== null ? $sslCertificate->valid_to->format('Y-m-d H:i') : null;
+        $validTo = $sslCertificate->valid_to?->format('Y-m-d H:i');
         $status = '';
         if ($sslCertificate->disabled) {
             $status = '<span class="label label-default">' . __('Disabled') . '</span>';

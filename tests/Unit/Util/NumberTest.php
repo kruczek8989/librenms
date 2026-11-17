@@ -55,7 +55,7 @@ final class NumberTest extends TestCase
         $this->assertEquals(12288, Number::toBytes('12kiB')); // not technically valid, but allowed
         $this->assertEquals(12, Number::toBytes('12B'));
         $this->assertEquals(1234, Number::toBytes('1234'));
-        $this->assertSame(0, (int) Number::toBytes('garbage')); // NAN cast to int is 0
+        $this->assertNan(Number::toBytes('garbage'));
         $this->assertNan(Number::toBytes('1m'));
         $this->assertNan(Number::toBytes('1234a'));
         $this->assertNan(Number::toBytes('1234as'));
@@ -135,7 +135,7 @@ final class NumberTest extends TestCase
     public function testCalculateRateInvalidTimeThrowsException(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Current time must be greater than previous time');
+        $this->expectExceptionMessageIsOrContains('Current time must be greater than previous time');
         Number::calculateRate('100', '200', 2.0, 1.0);
     }
 
@@ -148,7 +148,7 @@ final class NumberTest extends TestCase
     public function testCalculateRateNegativeValueThrowsException(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Counter values must be non-negative integers');
+        $this->expectExceptionMessageIsOrContains('Counter values must be non-negative integers');
         Number::calculateRate('-100', '200', 1.0, 2.0);
     }
 

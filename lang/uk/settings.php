@@ -1020,9 +1020,8 @@ return [
             'description' => 'Погані інтерфейси',
             'help' => 'Типи мережевих інтерфейсів щр мають бути проігноровані',
         ],
-        'ping_rrd_step' => [
-            'description' => 'Частота Ping',
-            'help' => 'Частота перевірок. Є значенням за замовчуванням для всіх пристроїв. Увага! При зміні цього значення необхідно ввести додаткоі зміни.  Зверніться до документації Fast Ping.',
+        'ping' => [
+            'description' => 'Шлях до ping',
         ],
         'poller_modules' => [
             'unix-agent' => [
@@ -1055,7 +1054,7 @@ return [
             'ucd-mib' => [
                 'description' => 'Ucd Mib',
             ],
-            'ipSystemStats' => [
+            'ip-system-stats' => [
                 'description' => 'ipSystemStats',
             ],
             'ports' => [
@@ -1175,7 +1174,7 @@ return [
                 'description' => 'URL',
                 'help' => 'URL Prometheus Push Gateway до якого надсилати дані',
             ],
-            'Job' => [
+            'job' => [
                 'description' => 'Job',
                 'help' => 'Мітка Job для експортованих метрик',
             ],
@@ -1513,21 +1512,23 @@ return [
             'description' => 'Відкрита мапа місцезнаходження',
             'help' => 'Мапа місцезнаходження показана за замовчуванням',
         ],
-        'smokeping.integration' => [
-            'description' => 'Увімкнути',
-            'help' => 'Увімкнути інтеграцію зі smokeping',
-        ],
-        'smokeping.dir' => [
-            'description' => 'Шлях до файлів RRD',
-            'help' => 'Повний шлях до файлів Smokeping RRD',
-        ],
-        'smokeping.pings' => [
-            'description' => 'Кількість ping',
-            'help' => 'Кількість запитів ping налаштована у Smokeping',
-        ],
-        'smokeping.url' => [
-            'description' => 'URL до smokeping',
-            'help' => 'Повний URL до GUI smokeping',
+        'smokeping' => [
+            'integration' => [
+                'description' => 'Увімкнути',
+                'help' => 'Увімкнути інтеграцію зі smokeping',
+            ],
+            'dir' => [
+                'description' => 'Шлях до файлів RRD',
+                'help' => 'Повний шлях до файлів Smokeping RRD',
+            ],
+            'pings' => [
+                'description' => 'Кількість ping',
+                'help' => 'Кількість запитів ping налаштована у Smokeping',
+            ],
+            'url' => [
+                'description' => 'URL до smokeping',
+                'help' => 'Повний URL до GUI smokeping',
+            ],
         ],
     ],
     'twofactor' => [

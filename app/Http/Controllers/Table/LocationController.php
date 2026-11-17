@@ -28,21 +28,24 @@ namespace App\Http\Controllers\Table;
 
 use App\Models\Device;
 use App\Models\Location;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 
+/**
+ * @extends TableController<Location>
+ */
 class LocationController extends TableController
 {
     /**
      * Defines search fields will be searched in order
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return array
      */
-    public function searchFields($request)
+    public function searchFields(Request $request): array
     {
         return ['location'];
     }
 
-    protected function sortFields($request)
+    protected function sortFields(Request $request): array
     {
         return [
             'location',
@@ -53,12 +56,11 @@ class LocationController extends TableController
 
     /**
      * Defines the base query for this resource
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
      */
-    public function baseQuery($request)
+    public function baseQuery(Request $request): Builder
     {
+        $this->authorize('viewAny', Location::class);
+
         return Location::hasAccess($request->user())->withCount([
             'devices',
             'devices as down_count' => fn ($q) => (new Device)->scopeIsDown($q),
@@ -66,19 +68,50 @@ class LocationController extends TableController
     }
 
     /**
-     * @param  Location  $location
-     * @return array|\Illuminate\Database\Eloquent\Model|\Illuminate\Support\Collection<string, mixed>
+     * @return list<string>
      */
-    public function formatItem($location)
+    protected function getExportHeaders(): array
     {
         return [
-            'id' => $location->id,
-            'location' => $location->location,
-            'lat' => $location->lat,
-            'lng' => $location->lng,
-            'devices' => $location->devices_count,
+            __('ID'),
+            __('Location'),
+            __('Latitude'),
+            __('Longitude'),
+            __('Devices'),
+            __('Down'),
+        ];
+    }
+
+    /**
+     * @param  Location  $item
+     * @return list<scalar|null>
+     */
+    protected function formatExportRow(Model $item): array
+    {
+        return [
+            $item->id,
+            $item->location,
+            $item->lat,
+            $item->lng,
+            $item->devices_count,
+            $item->getAttribute('down_count'),
+        ];
+    }
+
+    /**
+     * @param  Location  $model
+     * @return array<string, scalar>
+     */
+    public function formatItem(Model $model): array
+    {
+        return [
+            'id' => $model->id,
+            'location' => $model->location,
+            'lat' => $model->lat,
+            'lng' => $model->lng,
+            'devices' => $model->devices_count,
             /** @phpstan-ignore property.notFound (dynamic property from withCount) */
-            'down' => $location->down_count,
+            'down' => $model->down_count,
         ];
     }
 }

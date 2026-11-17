@@ -15,15 +15,10 @@ class Dashboard extends Model
 
     // ---- Query scopes ----
 
-    /**
-     * @param  Builder  $query
-     * @param  User  $user
-     * @return Builder|static
-     */
-    public function scopeAllAvailable(Builder $query, $user)
+    protected function scopeHasAccess(Builder $query, User $user): Builder
     {
-        return $query->where('user_id', $user->user_id)
-            ->orWhere('access', '>', 0);
+        return $query->where(fn (Builder $query) => $query->where($query->qualifyColumn('user_id'), $user->user_id)
+            ->orWhere($query->qualifyColumn('access'), '>', 0));
     }
 
     // ---- Define Relationships ----

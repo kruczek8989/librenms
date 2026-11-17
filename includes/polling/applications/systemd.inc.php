@@ -6,7 +6,7 @@ use LibreNMS\Exceptions\JsonAppException;
 use LibreNMS\Exceptions\JsonAppMissingKeysException;
 use LibreNMS\RRD\RrdDefinition;
 
-require_once LibrenmsConfig::get('install_dir') . '/includes/systemd-shared.inc.php';
+require LibrenmsConfig::get('install_dir') . '/includes/systemd-shared.inc.php';
 
 $name = 'systemd';
 $output = 'OK';
@@ -40,9 +40,7 @@ if (! function_exists('systemd_data_update_helper')) {
         $state_type,
         $rrd_flattened_name
     ) {
-        $rrd_flattened_name = is_null($rrd_flattened_name)
-            ? $state_type
-            : $rrd_flattened_name;
+        $rrd_flattened_name ??= $state_type;
         $rrd_name = [$polling_type, $name, $app_id, $rrd_flattened_name];
 
         // This if block allows metric names to be kept consistent

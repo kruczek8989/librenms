@@ -27,15 +27,16 @@
 namespace App\Models;
 
 use App\Facades\LibrenmsConfig;
-use App\Models\Traits\HasThresholds;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Arr;
 use LibreNMS\Enum\WirelessSensorType;
+use LibreNMS\Interfaces\Models\HasSyncProtectedAttributes;
 use LibreNMS\Interfaces\Models\Keyable;
 use LibreNMS\Util\Number;
 
-class WirelessSensor extends DeviceRelatedModel implements Keyable
+class WirelessSensor extends SensorModel implements HasSyncProtectedAttributes, Keyable
 {
-    use HasThresholds;
+    use HasFactory;
 
     const CREATED_AT = null;
     const UPDATED_AT = 'lastupdate';
@@ -65,7 +66,7 @@ class WirelessSensor extends DeviceRelatedModel implements Keyable
     ];
 
     /**
-     * @return array{sensor_class: 'LibreNMS\Enum\WirelessSensorType', sensor_oids: 'array'}
+     * @return array<string, string>
      */
     protected function casts(): array
     {
@@ -77,9 +78,14 @@ class WirelessSensor extends DeviceRelatedModel implements Keyable
 
     // ---- Helper Functions ----
 
-    public function classDescr()
+    public function classDescr(): string
     {
         return __('wireless.' . $this->sensor_class->value . '.short');
+    }
+
+    public function classDescrLong(): string
+    {
+        return $this->classDescr(); // FIXME stub
     }
 
     public function icon(): string
@@ -90,6 +96,11 @@ class WirelessSensor extends DeviceRelatedModel implements Keyable
     public function unit(): string
     {
         return __('wireless.' . $this->sensor_class->value . '.unit');
+    }
+
+    public function unitLong(): string
+    {
+        return $this->unit(); // FIXME stub
     }
 
     public function getGraphType(): string
@@ -116,6 +127,20 @@ class WirelessSensor extends DeviceRelatedModel implements Keyable
             WirelessSensorType::Distance => Number::formatSi($value * 1000, 2, 3, 'm'),
             default => $value . ' ' . $this->unit(),
         };
+    }
+
+    /**
+     * Custom limits set by a user are not overwritten by discovery, otherwise discovery only fills empty limits
+     *
+     * @return string[]
+     */
+    public function getSyncProtectedAttributes(): array
+    {
+        if ($this->sensor_custom === 'Yes') {
+            return self::LIMITS;
+        }
+
+        return array_values(array_filter(self::LIMITS, fn (string $limit): bool => $this->getAttribute($limit) !== null));
     }
 
     public function getCompositeKey(): string

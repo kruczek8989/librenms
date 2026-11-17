@@ -23,19 +23,19 @@
     <div class="form-group">
         <label for="graph_range-{{ $id }}" class="control-label">{{ __('Date range') }}</label>
         <select class="form-control" id="graph_range-{{ $id }}" name="graph_range">
-            <option value="onehour" @if($graph_range == 'onehour') selected @endif>{{ __('One Hour') }}</option>
-            <option value="fourhour" @if($graph_range == 'fourhour') selected @endif>{{ __('Four Hours') }}</option>
-            <option value="sixhour" @if($graph_range == 'sixhour') selected @endif>{{ __('Six Hours') }}</option>
-            <option value="twelvehour" @if($graph_range == 'twelvehour') selected @endif>{{ __('Twelve Hours') }}</option>
-            <option value="day" @if($graph_range == 'day') selected @endif>{{ __('One Day') }}</option>
-            <option value="twoday" @if($graph_range == 'twoday') selected @endif>{{ __('Two Days') }}</option>
-            <option value="week" @if($graph_range == 'week') selected @endif>{{ __('One Week') }}</option>
-            <option value="twoweek" @if($graph_range == 'twoweek') selected @endif>{{ __('Two Weeks') }}</option>
-            <option value="month" @if($graph_range == 'month') selected @endif>{{ __('One Month') }}</option>
-            <option value="twomonth" @if($graph_range == 'twomonth') selected @endif>{{ __('Two Months') }}</option>
-            <option value="threemonth" @if($graph_range == 'threemonth') selected @endif>{{ __('Three Months') }}</option>
-            <option value="year" @if($graph_range == 'year') selected @endif>{{ __('One Year') }}</option>
-            <option value="twoyear" @if($graph_range == 'twoyear') selected @endif>{{ __('Two Years') }}</option>
+            <option value="onehour" @if($graph_range == 'onehour') selected @endif>{{ __('1 Hour') }}</option>
+            <option value="fourhour" @if($graph_range == 'fourhour') selected @endif>{{ __('4 Hours') }}</option>
+            <option value="sixhour" @if($graph_range == 'sixhour') selected @endif>{{ __('6 Hours') }}</option>
+            <option value="twelvehour" @if($graph_range == 'twelvehour') selected @endif>{{ __('12 Hours') }}</option>
+            <option value="day" @if($graph_range == 'day') selected @endif>{{ __('24 Hours') }}</option>
+            <option value="twoday" @if($graph_range == 'twoday') selected @endif>{{ __('48 Hours') }}</option>
+            <option value="week" @if($graph_range == 'week') selected @endif>{{ __('1 Week') }}</option>
+            <option value="twoweek" @if($graph_range == 'twoweek') selected @endif>{{ __('2 Weeks') }}</option>
+            <option value="month" @if($graph_range == 'month') selected @endif>{{ __('1 Month') }}</option>
+            <option value="twomonth" @if($graph_range == 'twomonth') selected @endif>{{ __('2 Months') }}</option>
+            <option value="threemonth" @if($graph_range == 'threemonth') selected @endif>{{ __('3 Months') }}</option>
+            <option value="year" @if($graph_range == 'year') selected @endif>{{ __('1 Year') }}</option>
+            <option value="twoyear" @if($graph_range == 'twoyear') selected @endif>{{ __('2 Years') }}</option>
         </select>
     </div>
     <div class="form-group graph_select_extra-{{ $id }}" id="graph_select_device-{{ $id }}" style="display: none;">
@@ -116,7 +116,7 @@
         <select class="form-control" id="graph_sensors-{{ $id }}" name="graph_sensors[]" multiple="multiple" data-placeholder="{{ __('Type to search sensors...') }}">
             @foreach($graph_sensors as $sensor)
                 @if($sensor && $sensor->sensor_id)
-                    <option value="{{ $sensor->sensor_id }}" selected>{{ $sensor->device->shortDisplayName() . ' - ' . $sensor->sensor_descr . ' (' . ucfirst($sensor->sensor_class) . ')' }}</option>
+                    <option value="{{ $sensor->sensor_id }}" selected>{{ $sensor->device->shortDisplayName() . ' - ' . $sensor->sensor_descr . ' (' . $sensor->classDescr() . ')' }}</option>
                 @endif
             @endforeach
         </select>
@@ -129,9 +129,9 @@
 
 @section('javascript')
     <script>
-        init_select2('#graph_type-{{ $id }}', 'graph', {}, '{{ $graph_type ?: '' }}');
-        init_select2('#graph_device-{{ $id }}', 'device', {limit: 100}, '{{ $graph_device ?: '' }}');
-        init_select2('#graph_port-{{ $id }}', 'port', {limit: 100}, '{{ $graph_port ?: '' }}');
+        init_select2('#graph_type-{{ $id }}', 'graph', {}, @json($graph_type ?: ''));
+        init_select2('#graph_device-{{ $id }}', 'device', {limit: 100}, @json($graph_device ?: ''));
+        init_select2('#graph_port-{{ $id }}', 'port', {limit: 100}, @json($graph_port ?: ''));
         init_select2('#graph_application-{{ $id }}', 'application', function (params) {
             var graph_type = $('#graph_type-{{ $id }}').val().split('_');
             graph_type.shift();
@@ -141,11 +141,11 @@
                 term: params.term,
                 page: params.page || 1
             };
-        }, '{{ $graph_application ?: '' }}');
-        init_select2('#graph_munin-{{ $id }}', 'munin', {limit: 100}, '{{ $graph_munin ?: '' }}');
-        init_select2('#graph_service-{{ $id }}', 'service', {limit: 100}, '{{ $graph_service ?: '' }}');
-        init_select2('#graph_customoid-{{ $id }}', 'customoid', {limit: 100}, '{{ $graph_customoid ?: '' }}');
-        init_select2('#graph_bill-{{ $id }}', 'bill', {limit: 100}, '{{ $graph_bill ?: '' }}');
+        }, @json($graph_application ?: ''));
+        init_select2('#graph_munin-{{ $id }}', 'munin', {limit: 100}, @json($graph_munin ?: ''));
+        init_select2('#graph_service-{{ $id }}', 'service', {limit: 100}, @json($graph_service ?: ''));
+        init_select2('#graph_customoid-{{ $id }}', 'customoid', {limit: 100}, @json($graph_customoid ?: ''));
+        init_select2('#graph_bill-{{ $id }}', 'bill', {limit: 100}, @json($graph_bill ?: ''));
         init_select2('#graph_custom-{{ $id }}', 'graph-aggregate', {}, false);
         init_select2('#graph_ports-{{ $id }}', 'port', {limit: 100}, false);
 

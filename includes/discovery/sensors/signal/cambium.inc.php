@@ -1,5 +1,7 @@
 <?php
 
+use LibreNMS\Enum\SensorType;
+
 $divisor = 1;
 if (strstr((string) $device['sysDescr'], 'Cambium PTP 50650')) {
     $mib = 'CAMBIUM-PTP650-MIB';
@@ -26,6 +28,10 @@ if (strstr((string) $device['sysDescr'], 'Cambium PTP 50650')) {
     $mib = 'WHISP-BOX-MIBV2-MIB';
 }
 
+if (! isset($oid)) {
+    return;
+}
+
 $oids = trim(str_replace('"', '', snmp_get($device, "$oid", '-OsqnU', $mib)));
 d_echo($oids . "\n");
 
@@ -39,5 +45,5 @@ if (! empty($oids)) {
     $current /= $divisor;
     $index = $oid;
     $descr = 'Signal';
-    discover_sensor(null, 'signal', $device, $oid, $index, $type, $descr, $divisor, '1', null, null, null, null, $current);
+    discover_sensor(null, SensorType::Signal, $device, $oid, $index, $type, $descr, $divisor, '1', null, null, null, null, $current);
 }
