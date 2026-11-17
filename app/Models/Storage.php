@@ -2,13 +2,20 @@
 
 namespace App\Models;
 
+use App\Observers\StorageObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Facades\Log;
 use LibreNMS\Exceptions\InsufficientDataException;
+use LibreNMS\Interfaces\Models\HasSyncProtectedAttributes;
 use LibreNMS\Interfaces\Models\Keyable;
 use LibreNMS\Util\Number;
 
-class Storage extends DeviceRelatedModel implements Keyable
+#[ObservedBy([StorageObserver::class])]
+class Storage extends DeviceRelatedModel implements HasSyncProtectedAttributes, Keyable
 {
+    use HasFactory;
+
     protected $table = 'storage';
     protected $primaryKey = 'storage_id';
     public $timestamps = false;
@@ -28,6 +35,16 @@ class Storage extends DeviceRelatedModel implements Keyable
         'storage_perc_oid',
         'storage_perc_warn',
     ];
+
+    /**
+     * Warn threshold is only set from discovery on create so users can override it
+     *
+     * @return string[]
+     */
+    public function getSyncProtectedAttributes(): array
+    {
+        return ['storage_perc_warn'];
+    }
 
     public function getCompositeKey(): string
     {

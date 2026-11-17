@@ -26,12 +26,13 @@
 
 namespace LibreNMS\Modules;
 
+use App\Actions\Device\DeviceMtuTest;
 use App\Facades\LibrenmsConfig;
 use App\Models\Device;
+use LibreNMS\Enum\PollingMethodType;
 use LibreNMS\Interfaces\Data\DataStorageInterface;
 use LibreNMS\Interfaces\Module;
 use LibreNMS\OS;
-use LibreNMS\Polling\ModuleStatus;
 use LibreNMS\RRD\RrdDefinition;
 use LibreNMS\Util\Time;
 
@@ -45,7 +46,18 @@ class Availability implements Module
         return [];
     }
 
-    public function shouldDiscover(OS $os, ModuleStatus $status): bool
+    /**
+     * The methods of the device that affect availability, only they are checked for it.
+     */
+    public function pollingMethods(Device $device): array
+    {
+        return array_values(array_filter(
+            PollingMethodType::cases(),
+            fn (PollingMethodType $type): bool => (bool) $device->pollingMethod($type)?->affects_availability,
+        ));
+    }
+
+    public function shouldDiscover(OS $os): bool
     {
         return false;
     }
@@ -60,9 +72,9 @@ class Availability implements Module
     /**
      * @inheritDoc
      */
-    public function shouldPoll(OS $os, ModuleStatus $status): bool
+    public function shouldPoll(OS $os): bool
     {
-        return $status->isEnabled();
+        return $os->getDevice()->polling()->hasAvailabilityCheck();
     }
 
     /**
@@ -70,6 +82,10 @@ class Availability implements Module
      */
     public function poll(OS $os, DataStorageInterface $datastore): void
     {
+        if ($os->getMethodResults()->isAvailable(PollingMethodType::Icmp)) {
+            $os->getDevice()->mtu_status = app(DeviceMtuTest::class)->execute($os->getDevice());
+        }
+
         $os->enableGraph('availability');
 
         $valid_ids = [];

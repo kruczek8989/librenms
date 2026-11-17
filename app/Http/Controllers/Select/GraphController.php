@@ -28,6 +28,7 @@ namespace App\Http\Controllers\Select;
 
 use App\Http\Controllers\Controller;
 use App\Models\Device;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -36,19 +37,19 @@ use LibreNMS\Util\StringHelpers;
 
 class GraphController extends Controller
 {
-    private $rules = [
+    private array $rules = [
         'limit' => 'int',
         'page' => 'int',
         'term' => 'nullable|string',
         'device' => 'nullable|int',
     ];
 
-    public function __invoke(Request $request)
+    public function __invoke(Request $request): JsonResponse
     {
         $this->validate($request, $this->rules);
 
         $data = [];
-        $search = $request->input('term');
+        $search = $request->input('term', '');
         $device_id = $request->input('device');
         $device = $device_id ? Device::find($device_id) : null;
 
@@ -104,23 +105,14 @@ class GraphController extends Controller
         ]);
     }
 
-    private function formatGraph($top, $graph)
+    /**
+     * @return array{id: int|string, text: string, icon?: string}
+     */
+    private function formatGraph(string $top, string $graph): array
     {
-        $text = $graph;
-        if (Str::contains('_', $graph)) {
-            [$type, $subtype] = explode('_', (string) $graph, 2);
-        } else {
-            $type = $graph;
-            $subtype = '';
-        }
-
-        if (! Graph::isMibGraph($type, $subtype)) {
-            $text = ucwords($top . ' ' . str_replace(['_', '-'], ' ', $text));
-        }
-
         return [
             'id' => $top . '_' . $graph,
-            'text' => $text,
+            'text' => ucwords($top . ' ' . str_replace(['_', '-'], ' ', $graph)),
         ];
     }
 
@@ -130,7 +122,7 @@ class GraphController extends Controller
      * @param  string  $search
      * @return Collection<string, string>
      */
-    private function filterTypeGraphs($graphs, $type, $search)
+    private function filterTypeGraphs(Collection $graphs, string $type, string $search): Collection
     {
         $search = strtolower($search);
 

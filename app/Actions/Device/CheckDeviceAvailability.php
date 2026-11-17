@@ -2,40 +2,45 @@
 
 namespace App\Actions\Device;
 
-use App\Models\Device;
-use LibreNMS\Enum\AvailabilitySource;
-use LibreNMS\Polling\ConnectivityHelper;
+use App\Models\DevicePollingMethod;
+use Illuminate\Support\Facades\Log;
+use LibreNMS\Polling\PerDeviceMethodResults;
 
-class CheckDeviceAvailability
+readonly class CheckDeviceAvailability
 {
     public function __construct(
-        private readonly SetDeviceAvailability $setDeviceAvailability,
-        private readonly DeviceIsPingable $deviceIsPingable,
-        private readonly DeviceIsSnmpable $deviceIsSnmpable,
-        private readonly DeviceMtuTest $deviceMtuTest,
+        private SetDeviceAvailability $setDeviceAvailability,
     ) {
     }
 
-    public function execute(Device $device, bool $commit = false): bool
+    /**
+     * Check the methods that affect availability and set the device status.
+     * Other methods are checked by the first module that needs them.
+     */
+    public function execute(PerDeviceMethodResults $methodResults, bool $commit = false): bool
     {
-        $ping_response = $this->deviceIsPingable->execute($device);
+        $device = $methodResults->device;
 
-        if ($ping_response->success()) {
-            $is_up_snmp = ! ConnectivityHelper::snmpIsAllowed($device) || $this->deviceIsSnmpable->execute($device);
-            $this->setDeviceAvailability->execute($device, $is_up_snmp, AvailabilitySource::Snmp, $commit);
+        $deviceMethods = $device->polling()->methods();
 
-            $device->mtu_status = $this->deviceMtuTest->execute($device);
-        } else { // icmp down
-            $this->setDeviceAvailability->execute($device, false, AvailabilitySource::Icmp, $commit);
+        if ($deviceMethods->isEmpty()) {
+            Log::debug("No polling methods for $device->hostname, availability is not checked");
+
+            return $device->status;
+        }
+
+        $availabilityMethods = $deviceMethods
+            ->filter(fn (DevicePollingMethod $deviceMethod): bool => $deviceMethod->enabled && $deviceMethod->affects_availability);
+
+        foreach ($availabilityMethods as $deviceMethod) {
+            $methodResults->result($deviceMethod->method_type); // checks the method
         }
 
         if ($commit) {
-            if (ConnectivityHelper::pingIsAllowed($device)) {
-                $ping_response->saveStats($device);
-            }
-
-            $device->save(); // confirm device is saved
+            $availabilityMethods->each->save();
         }
+
+        $this->setDeviceAvailability->execute($device, $commit);
 
         return $device->status;
     }

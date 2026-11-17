@@ -2,19 +2,25 @@
 
 namespace App\Observers;
 
+use App\Actions\Device\UpdateDeviceOutage;
 use App\ApiClients\Oxidized;
 use App\Facades\LibrenmsConfig;
-use App\Facades\Rrd;
 use App\Models\Device;
 use App\Models\Eventlog;
 use File;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Log;
 use LibreNMS\Enum\Severity;
 use LibreNMS\Exceptions\HostRenameException;
-use Log;
+use LibreNMS\RRD\RrdPath;
 
 class DeviceObserver
 {
+    public function creating(Device $device): void
+    {
+        $device->regenerateDisplayName();
+    }
+
     /**
      * Handle the device "created" event.
      *
@@ -36,12 +42,15 @@ class DeviceObserver
     public function updated(Device $device): void
     {
         // log up/down status changes
-        if ($device->isDirty(['status', 'status_reason'])) {
+        if ($device->isDirty('status')) {
             $type = $device->status ? 'up' : 'down';
             $reason = $device->status ? $device->getOriginal('status_reason') : $device->status_reason;
             $polled_by = LibrenmsConfig::get('distributed_poller') ? (' by ' . \config('librenms.node_id')) : '';
 
             Eventlog::log(sprintf('Device status changed to %s from %s check%s.', ucfirst($type), $reason, $polled_by), $device, $type);
+            Log::debug('Device availability updated for ' . $device->hostname . ' to ' . ($device->status ? 'up' : 'down') . ' due to ' . $device->status_reason);
+
+            app(UpdateDeviceOutage::class)->execute($device);
         }
 
         // key attribute changes
@@ -60,13 +69,24 @@ class DeviceObserver
 
     public function updating(Device $device): void
     {
+        if ($device->isDirty(['display_template', 'hostname', 'sysName', 'ip', 'overwrite_ip'])) {
+            $device->regenerateDisplayName();
+        }
+
         // handle device renames
         if ($device->isDirty('hostname')) {
             $new_name = $device->hostname;
 
             $old_name = $device->getOriginal('hostname');
-            $new_rrd_dir = Rrd::dirFromHost($new_name);
-            $old_rrd_dir = Rrd::dirFromHost($old_name);
+            $new_rrd_dir = RrdPath::make($new_name)->fullPath();
+            $old_rrd_dir = RrdPath::make($old_name)->fullPath();
+
+            // Fail if another device has the same hostname
+            if (Device::where('hostname', $device->hostname)->whereNot('device_id', $device->device_id)->count() > 0) {
+                $device->hostname = $old_name;
+                Eventlog::log("Renaming of $old_name failed because there is already a device with the hostname $new_name", $device, 'system', Severity::Error);
+                throw new HostRenameException("Renaming of $old_name failed because there is already a device with the hostname $new_name");
+            }
 
             if (is_dir($new_rrd_dir)) {
                 $device->hostname = $old_name;
@@ -75,13 +95,14 @@ class DeviceObserver
                 throw new HostRenameException("Renaming of $old_name failed due to existing RRD folder for $new_name");
             }
 
-            if (rename($old_rrd_dir, $new_rrd_dir)) {
+            // a device without an RRD folder (e.g. disabled, never polled) has nothing to move
+            if (! is_dir($old_rrd_dir) || rename($old_rrd_dir, $new_rrd_dir)) {
                 $device->ip = null;
                 $source = auth()->user()?->username ?: 'console';
                 Eventlog::log("Hostname changed -> $new_name ($source)", $device, 'system', Severity::Notice);
             } else {
                 $device->hostname = $old_name;
-                Eventlog::log("Renaming of $old_name failed", $device, 'system', Severity::Error);
+                Eventlog::log("Renaming of $old_name failed because the RRD directory rename failed", $device, 'system', Severity::Error);
                 throw new HostRenameException("Renaming of $old_name failed");
             }
         }
@@ -94,11 +115,11 @@ class DeviceObserver
     {
         if (! empty($device->hostname)) {
             // delete rrd files
-            $host_dir = Rrd::dirFromHost($device->hostname);
+            $host_dir = RrdPath::make($device->hostname)->fullPath();
             try {
                 $result = File::deleteDirectory($host_dir);
 
-                if (! $result) {
+                if (! $result && File::exists($host_dir)) {
                     Log::debug("Could not delete RRD files for: $device->hostname");
                 }
             } catch (\Exception $e) {
@@ -152,6 +173,8 @@ class DeviceObserver
         $device->ipv4()->delete();
         $device->ipv6()->delete();
         $device->isisAdjacencies()->delete();
+        $device->links()->delete();
+        $device->remoteLinks()->delete();
         $device->macs()->delete();
         $device->mefInfo()->delete();
         $device->mempools()->delete();
@@ -175,6 +198,7 @@ class DeviceObserver
         $device->ospfv3Ports()->delete();
         $device->outages()->delete();
         $device->packages()->delete();
+        $device->pollingMethods()->delete();
         $device->portsFdb()->delete();
         $device->portsNac()->delete();
         \DB::table('ports_stack')->where('device_id', $device->device_id)->delete();
@@ -196,7 +220,6 @@ class DeviceObserver
         $device->vlans()->delete();
         $device->vminfo()->delete();
         $device->vrfs()->delete();
-        $device->vrfLites()->delete();
         $device->vServers()->delete();
         $device->wirelessSensors()->delete();
 
@@ -208,38 +231,9 @@ class DeviceObserver
                 }
             });
 
-        // handle device dependency updates
-        $device->children->each->updateMaxDepth($device->device_id);
-    }
-
-    /**
-     * Handle the device "Pivot Attached" event.
-     *
-     * @param  Device  $device
-     * @param  string  $relationName  parents or children
-     * @param  array  $pivotIds  list of pivot ids
-     * @param  array  $pivotIdsAttributes  additional pivot attributes
-     * @return void
-     */
-    public function pivotAttached(Device $device, $relationName, $pivotIds, $pivotIdsAttributes)
-    {
-        if ($relationName == 'parents') {
-            // a parent attached to this device
-
-            // update the parent's max depth incase it used to be standalone
-            Device::whereIntegerInRaw('device_id', $pivotIds)->get()->each->validateStandalone();
-
-            // make sure this device's max depth is updated
-            $device->updateMaxDepth();
-        } elseif ($relationName == 'children') {
-            // a child device attached to this device
-
-            // if this device used to be standalone, we need to udpate max depth
-            $device->validateStandalone();
-
-            // make sure the child's max depth is updated
-            Device::whereIntegerInRaw('device_id', $pivotIds)->get()->each->updateMaxDepth();
-        }
+        // detach with ids so DeviceRelationshipObserver updates the remaining dependency depths
+        $device->children()->detach($device->children()->allRelatedIds());
+        $device->parents()->detach($device->parents()->allRelatedIds());
     }
 
     public static function attributeChangedMessage($attribute, $value, $previous): string

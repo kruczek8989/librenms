@@ -6,9 +6,10 @@
 <div class="container-fluid">
 @include('alerts.modals.ack')
 @include('alerts.modals.notes')
+@include('alerts.modals.details')
 @if (!$bare)
 <div class="row collapse @if(!$hide_dashboard_editor)in @endif" id="dashboard-editor">
-    <div class="col-md-12">
+    <div class="col-md-12 tw:pl-0!">
         <div class="btn-group btn-lg">
             <button class="btn btn-default disabled" style="min-width:160px;"><span class="pull-left">{{ trans('dashboard.title') }}</span></button>
             <div class="btn-group">
@@ -196,7 +197,8 @@
             column: 20,
             float: false,
             draggable: {handle: 'header, span'},
-            resizable: {handles: 'all'},
+            alwaysShowResizeHandle: false,
+            resizable: {handles: 'se,sw,ne,nw'},
             disableOneColumnMode: true,
         }, '.grid-stack');
 
@@ -244,7 +246,7 @@
         if (dashboard_id > 0) {
             $.ajax({
                 type: 'DELETE',
-                url: '{{ route('dashboard.widget.clear', '?') }}'.replace('?', dashboard_id),
+                url: route('dashboard.widget.clear', dashboard_id),
                 dataType: "json",
                 success: function (data) {
                     if (data.status == 'ok') {
@@ -268,7 +270,7 @@
         if (dashboard_id > 0) {
             $.ajax({
                 type: 'POST',
-                url: '{{ route('dashboard.widget.add', '?') }}'.replace('?', dashboard_id),
+                url: route('dashboard.widget.add', dashboard_id),
                 data: {
                     widget_type: widget_type
                 },
@@ -290,11 +292,11 @@
         }
     });
 
-    $(document).on( "click", ".close-widget", function() {
+    $(document).on( "click", "[data-widget-action='close']", function() {
         var widget_id = $(this).data('widget-id');
         $.ajax({
             type: 'DELETE',
-            url: '{{ route('dashboard.widget.remove', '?') }}'.replace('?', widget_id),
+            url: route('dashboard.widget.remove', widget_id),
             dataType: "json",
             success: function (data) {
                 if (data.status == 'ok') {
@@ -315,7 +317,7 @@
         });
     });
 
-    $(document).on("click",".edit-widget",function() {
+    $(document).on("click","[data-widget-action='edit']",function() {
         const $widget = $(this).closest('.grid-stack-item');
         if ($widget.data('settings') == 1) {
             $widget.data('settings', '0');
@@ -348,7 +350,7 @@
             });
             $.ajax({
                 type: 'PUT',
-                url: '{{ route('dashboard.widget.update', '?') }}'.replace('?', dashboard_id),
+                url: route('dashboard.widget.update', dashboard_id),
                 data: {data: JSON.stringify(serialized)},
                 dataType: "json",
                 success: function (data) {
@@ -383,7 +385,7 @@
     function dashboard_delete(data) {
         $.ajax({
             type: 'DELETE',
-            url: '{{ route('dashboard.destroy', '?') }}'.replace('?', $(data).data('dashboard')),
+            url: route('dashboard.destroy', $(data).data('dashboard')),
             dataType: "json",
             success: function (data) {
                 if( data.status == "ok" ) {
@@ -416,7 +418,7 @@
         if (dashboard_id > 0) {
             $.ajax({
                 type: 'PUT',
-                url: '{{ route('dashboard.update', '?') }}'.replace('?', dashboard_id),
+                url: route('dashboard.update', dashboard_id),
                 data: {
                     dashboard_name: data['dashboard_name'],
                     access: data['access']
@@ -426,7 +428,7 @@
                     if (data.status == "ok") {
                         toastr.success(data.message);
                         setTimeout(function (){
-                            window.location.href = '{{ route('dashboard.show', '?') }}'.replace('?', dashboard_id);
+                            window.location.href = route('dashboard.show', dashboard_id);
                         }, 500);
                     }
                     else {
@@ -455,7 +457,7 @@
                 if( data.status == "ok" ) {
                     toastr.success(data.message);
                     setTimeout(function (){
-                        window.location.href = '{{ route('dashboard.show', '?') }}'.replace('?', data.dashboard_id);
+                        window.location.href = route('dashboard.show', data.dashboard_id);
                     }, 500);
                 }
                 else {
@@ -490,7 +492,7 @@
 
             $.ajax({
                 type: 'POST',
-                url: '{{ route('dashboard.copy', '?') }}'.replace('?', dashboard_id),
+                url: route('dashboard.copy', dashboard_id),
                 data: {target_user_id: target_user_id},
                 dataType: "json",
                 success: function (data) {
@@ -511,21 +513,21 @@
 
     function widget_dom(data) {
         dom = '<div id="'+data.user_widget_id+'" class="grid-stack-item" data-type="'+data.widget+'" data-settings="0" gs-id="'+data.user_widget_id+'">'+
-              '<div class="grid-stack-item-content">'+
-              '<header class="widget_header"><span id="widget_title_'+data.user_widget_id+'">'+data.title+
+              '<div class="grid-stack-item-content tw:ring tw:ring-gray-200 tw:dark:ring-dark-gray-200 tw:left-0! tw:bottom-0!">'+
+              '<header class="tw:bg-gray-200 tw:dark:bg-dark-gray-200 tw:text-gray-800 tw:dark:text-dark-white-100 tw:p-3 tw:text-center"><span id="widget_title_'+data.user_widget_id+'" class="dashboard-widget-title">'+data.title+
               '</span><span id="widget_title_counter_'+data.user_widget_id+'"></span>'+
-              '<span class="fade-edit pull-right">'+
+              '<span class="fade-edit tw:float-right">'+
 
                 @if (
                         ($dashboard->access == 1 && Auth::id() === $dashboard->user_id) ||
                         ($dashboard->access == 0 || $dashboard->access >= 2)
                     )
-                        '<i class="fa fa-pencil-square-o edit-widget" data-widget-id="'+data.user_widget_id+'" aria-label="Settings" data-toggle="tooltip" data-placement="top" title="Settings">&nbsp;</i>&nbsp;'+
+                        '<i class="fa fa-pencil-square-o tw:cursor-pointer tw:me-2 tw:pl-2" data-widget-action="edit" data-widget-id="'+data.user_widget_id+'" data-toggle="tooltip" data-placement="top">&nbsp;</i>&nbsp;'+
                 @endif
-              '<i class="text-danger fa fa-times close-widget" data-widget-id="'+data.user_widget_id+'" aria-label="Close" data-toggle="tooltip" data-placement="top" title="Remove">&nbsp;</i>&nbsp;'+
+              '<i class="fa fa-lg fa-times tw:text-[#a94442] tw:dark:text-[#ee5f5b] tw:cursor-pointer tw:me-2" data-widget-action="close" data-widget-id="'+data.user_widget_id+'" data-toggle="tooltip" data-placement="top">&nbsp;</i>&nbsp;'+
               '</span>'+
               '</header>'+
-              '<div class="widget_body" id="widget_body_'+data.user_widget_id+'">'+data.widget+'</div>'+
+              '<div class="tw:left-1! tw:right-1! tw:p-2 tw:overflow-y-auto tw:overflow-x-hidden tw:w-full tw:h-[calc(100%-2.6em)] tw:cursor-auto" id="widget_body_'+data.user_widget_id+'">'+data.widget+'</div>'+
               '</div></div>';
 
         // GridStack v11+ doesn't accept HTML strings in addWidget(), so build an element.
@@ -583,7 +585,7 @@
         if(widget_id > 0 && widget_settings != {}) {
             $.ajax({
                 type: 'PUT',
-                url: '{{ route('dashboard.widget.settings', '?') }}/'.replace('?', widget_id),
+                url: route('dashboard.widget.settings', widget_id),
                 data: { settings: widget_settings },
                 dataType: "json",
                 success: function (data) {
@@ -618,7 +620,7 @@
             url: ajax_url + '/dash/' + data_type,
             data: {
                 id: id,
-                dimensions: {x: $widget_body.width(), y: $widget_body.height()},
+                dimensions: {x: Math.floor($widget_body.width()), y: Math.floor($widget_body.height())},
                 settings: $widget_body.closest('.grid-stack-item').data('settings') == 1 ? 1 : 0
             },
             dataType: 'json',

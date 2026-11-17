@@ -32,6 +32,9 @@
  * @copyright  2020 KanREN, Inc
  * @author     Heath Barnhart <hbarnhart@kanren.net>
  */
+
+use LibreNMS\Enum\SensorType;
+
 echo 'Adva FSP-150 dBm';
 
 $multiplier = 1;
@@ -43,8 +46,8 @@ foreach ($pre_cache['adva_fsp150_ports'] as $index => $entry) {
         // Discover receive power level
         $oidRx = '.1.3.6.1.4.1.2544.1.12.5.1.5.1.34.' . $index . '.3';
         $oidTx = '.1.3.6.1.4.1.2544.1.12.5.1.5.1.33.' . $index . '.3';
-        $currentRx = $pre_cache['adva_fsp150_perfs'][$index . '.3']['cmEthernetNetPortStatsOPR'];
-        $currentTx = $pre_cache['adva_fsp150_perfs'][$index . '.3']['cmEthernetNetPortStatsOPT'];
+        $currentRx = $pre_cache['adva_fsp150_perfs'][$index . '.3']['cmEthernetNetPortStatsOPR'] ?? 0;
+        $currentTx = $pre_cache['adva_fsp150_perfs'][$index . '.3']['cmEthernetNetPortStatsOPT'] ?? 0;
 
         if ($currentRx != 0 || $currentTx != 0) {
             $entPhysicalIndex = $entry['cmEthernetNetPortIfIndex'];
@@ -52,7 +55,7 @@ foreach ($pre_cache['adva_fsp150_ports'] as $index => $entry) {
             $descrRx = ($pre_cache['adva_fsp150_ifName'][$entry['cmEthernetNetPortIfIndex']]['ifName'] ?? 'ifIndex ' . $entry['cmEthernetNetPortIfIndex']) . ' Rx Power';
             discover_sensor(
                 null,
-                'dbm',
+                SensorType::Dbm,
                 $device,
                 $oidRx,
                 'cmEthernetNetPortStatsOPR.' . $index,
@@ -74,7 +77,7 @@ foreach ($pre_cache['adva_fsp150_ports'] as $index => $entry) {
             $descrTx = ($pre_cache['adva_fsp150_ifName'][$entry['cmEthernetNetPortIfIndex']]['ifName'] ?? 'ifIndex ' . $entry['cmEthernetNetPortIfIndex']) . ' Tx Power';
             discover_sensor(
                 null,
-                'dbm',
+                SensorType::Dbm,
                 $device,
                 $oidTx,
                 'cmEthernetNetPortStatsOPT.' . $index,
@@ -109,7 +112,7 @@ foreach ($pre_cache['adva_fsp150_ports'] as $index => $entry) {
 
             discover_sensor(
                 null,
-                'dbm',
+                SensorType::Dbm,
                 $device,
                 $oidRx,
                 'cmEthernetAccPortStatsOPR.' . $index,
@@ -131,7 +134,7 @@ foreach ($pre_cache['adva_fsp150_ports'] as $index => $entry) {
 
             discover_sensor(
                 null,
-                'dbm',
+                SensorType::Dbm,
                 $device,
                 $oidTx,
                 'cmEthernetAccPortStatsOPT.' . $index,
@@ -165,7 +168,7 @@ foreach ($pre_cache['adva_fsp150_ports'] as $index => $entry) {
             $descrRx = ($pre_cache['adva_fsp150_ifName'][$entry['cmEthernetTrafficPortIfIndex']]['ifName'] ?? 'ifIndex ' . $entry['cmEthernetTrafficPortIfIndex']) . ' Rx Power';
             discover_sensor(
                 null,
-                'dbm',
+                SensorType::Dbm,
                 $device,
                 $oidRx,
                 'cmEthernetTrafficPortStatsOPR.' . $index,
@@ -186,7 +189,7 @@ foreach ($pre_cache['adva_fsp150_ports'] as $index => $entry) {
             $descrTx = ($pre_cache['adva_fsp150_ifName'][$entry['cmEthernetTrafficPortIfIndex']]['ifName'] ?? 'ifIndex ' . $entry['cmEthernetTrafficPortIfIndex']) . ' Tx Power';
             discover_sensor(
                 null,
-                'dbm',
+                SensorType::Dbm,
                 $device,
                 $oidTx,
                 'cmEthernetTrafficPortStatsOPT.' . $index,

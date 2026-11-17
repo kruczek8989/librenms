@@ -18,99 +18,8 @@
  */
 
 use App\Facades\LibrenmsConfig;
-use LibreNMS\Enum\Severity;
-use LibreNMS\Exceptions\InvalidIpException;
-use LibreNMS\Util\Debug;
 use LibreNMS\Util\IP;
 use LibreNMS\Util\Laravel;
-use Symfony\Component\Process\Process;
-
-/**
- * Execute and snmp command, filter debug output unless -v is specified
- *
- * @param  array  $command
- * @return null|string
- */
-function external_exec($command)
-{
-    $device = DeviceCache::getPrimary();
-
-    $proc = new Process($command);
-    $proc->setTimeout(LibrenmsConfig::get('snmp.exec_timeout', 1200));
-
-    if (Debug::isEnabled() && ! Debug::isVerbose()) {
-        $patterns = [
-            '/-c\' \'[\S]+\'/',
-            '/-u\' \'[\S]+\'/',
-            '/-U\' \'[\S]+\'/',
-            '/-A\' \'[\S]+\'/',
-            '/-X\' \'[\S]+\'/',
-            '/-P\' \'[\S]+\'/',
-            '/-H\' \'[\S]+\'/',
-            '/-y\' \'[\S]+\'/',
-            '/(udp|udp6|tcp|tcp6):([^:]+):([\d]+)/',
-        ];
-        $replacements = [
-            '-c\' \'COMMUNITY\'',
-            '-u\' \'USER\'',
-            '-U\' \'USER\'',
-            '-A\' \'PASSWORD\'',
-            '-X\' \'PASSWORD\'',
-            '-P\' \'PASSWORD\'',
-            '-H\' \'HOSTNAME\'',
-            '-y\' \'KG_KEY\'',
-            '\1:HOSTNAME:\3',
-        ];
-
-        $debug_command = preg_replace($patterns, $replacements, $proc->getCommandLine());
-        c_echo('SNMP[%c' . $debug_command . "%n]\n");
-    } elseif (Debug::isVerbose()) {
-        c_echo('SNMP[%c' . $proc->getCommandLine() . "%n]\n");
-    }
-
-    $proc->run();
-    $output = $proc->getOutput();
-
-    if ($proc->getExitCode()) {
-        if (Str::startsWith($proc->getErrorOutput(), 'Invalid authentication protocol specified')) {
-            \App\Models\Eventlog::log('Unsupported SNMP authentication algorithm - ' . $proc->getExitCode(), optional($device)->device_id, 'poller', Severity::Error);
-        } elseif (Str::startsWith($proc->getErrorOutput(), 'Invalid privacy protocol specified')) {
-            \App\Models\Eventlog::log('Unsupported SNMP privacy algorithm - ' . $proc->getExitCode(), optional($device)->device_id, 'poller', Severity::Error);
-        }
-        d_echo('Exitcode: ' . $proc->getExitCode());
-        d_echo($proc->getErrorOutput());
-    }
-
-    if (Debug::isEnabled() && ! Debug::isVerbose()) {
-        $ip_regex = '/(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/';
-        $debug_output = preg_replace($ip_regex, '*', $output);
-        d_echo($debug_output . PHP_EOL);
-    } elseif (Debug::isVerbose()) {
-        d_echo($output . PHP_EOL);
-    }
-    d_echo($proc->getErrorOutput());
-
-    return $output;
-}
-
-function shorthost($hostname, $len = 12)
-{
-    // IP addresses should not be shortened
-    if (filter_var($hostname, FILTER_VALIDATE_IP)) {
-        return $hostname;
-    }
-    $len = LibrenmsConfig::get('shorthost_target_length', $len);
-
-    $parts = explode('.', (string) $hostname);
-    $shorthost = $parts[0];
-    $i = 1;
-    while ($i < count($parts) && strlen($shorthost . '.' . $parts[$i]) < $len) {
-        $shorthost = $shorthost . '.' . $parts[$i];
-        $i++;
-    }
-
-    return $shorthost;
-}
 
 function print_error($text)
 {
@@ -154,29 +63,16 @@ function ifclass($ifOperStatus, $ifAdminStatus)
     ]);
 }
 
+/**
+ * @deprecated Use DeviceCache::get() and the Device model instead
+ */
 function device_by_id_cache($device_id)
 {
     return DeviceCache::get((int) $device_id)->toArray();
 }
 
-function getidbyname($hostname)
-{
-    return DeviceCache::getByHostname($hostname)->device_id;
-}
-
-function set_dev_attrib($device, $attrib_type, $attrib_value)
-{
-    return DeviceCache::get((int) $device['device_id'])->setAttrib($attrib_type, $attrib_value);
-}
-
-function get_dev_attrib($device, $attrib_type)
-{
-    return DeviceCache::get((int) $device['device_id'])->getAttrib($attrib_type);
-}
-
 /**
  * Output using console color if possible
- * https://github.com/pear/Console_Color2/blob/master/examples/documentation
  *
  * @param  string  $string  the string to print with console color
  * @param  bool  $enabled  if set to false, this function does nothing
@@ -188,9 +84,8 @@ function c_echo($string, $enabled = true)
     }
 
     if (Laravel::isCli()) {
-        global $console_color;
-        if ($console_color) {
-            echo $console_color->convert($string);
+        if (\Illuminate\Support\Facades\Facade::getFacadeApplication() !== null) {
+            \Illuminate\Support\Facades\Log::info($string, ['color' => true, 'nlb' => true]);
         } else {
             // limited functionality for validate.php
             $search = [
@@ -215,75 +110,6 @@ function c_echo($string, $enabled = true)
         echo preg_replace('/%((%)|.)/', '', $string);
     }
 }
-
-/*
- * @return true if client IP address is authorized to access graphs
- */
-function is_client_authorized($clientip)
-{
-    if (LibrenmsConfig::get('allow_unauth_graphs', false)) {
-        d_echo("Unauthorized graphs allowed\n");
-
-        return true;
-    }
-
-    foreach (LibrenmsConfig::get('allow_unauth_graphs_cidr', []) as $range) {
-        try {
-            if (IP::parse($clientip)->inNetwork($range)) {
-                d_echo("Unauthorized graphs allowed from $range\n");
-
-                return true;
-            }
-        } catch (InvalidIpException) {
-            d_echo("Client IP ($clientip) is invalid.\n");
-        }
-    }
-
-    return false;
-} // is_client_authorized
-
-/*
- * @return an array of all graph subtypes for the given type
- */
-function get_graph_subtypes(string $type): array
-{
-    $dir = base_path('includes/html/graphs/' . basename($type));
-
-    if (! is_dir($dir)) {
-        return [];
-    }
-
-    $types = [];
-
-    foreach (new DirectoryIterator($dir) as $file) {
-        if ($file->isFile() && str_ends_with($file->getFilename(), '.inc.php')) {
-            $name = $file->getBasename('.inc.php');
-            if ($name !== 'auth') {
-                $types[] = $name;
-            }
-        }
-    }
-
-    sort($types);
-
-    return $types;
-}
-
-function generate_smokeping_file($device, $file = '')
-{
-    $smokeping = new \LibreNMS\Util\Smokeping(DeviceCache::get((int) $device['device_id']));
-
-    return $smokeping->generateFileName($file);
-}
-
-function is_customoid_graph($type, $subtype)
-{
-    if (! empty($subtype) && $type == 'customoid') {
-        return true;
-    }
-
-    return false;
-} // is_customoid_graph
 
 /**
  * Convert a MySQL binary v4 (4-byte) or v6 (16-byte) IP address to a printable string.
@@ -399,89 +225,6 @@ function get_port_id($ports_mapped, $port, $port_association_mode)
     }
 
     return $maps[$port_association_mode][$key] ?? null;
-}
-
-/**
- * Create a glue-chain
- *
- * @param  array  $tables  Initial Tables to construct glue-chain
- * @param  string  $target  Glue to find (usual device_id)
- * @param  int  $x  Recursion Anchor
- * @param  array  $hist  History of processed tables
- * @param  array  $last  Glues on the fringe
- * @return array|false
- */
-function ResolveGlues($tables, $target, $x = 0, $hist = [], $last = [])
-{
-    if (count($tables) == 1 && $x != 0) {
-        if (dbFetchCell('SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_NAME = ? && COLUMN_NAME = ?', [$tables[0], $target]) == 1) {
-            return array_merge($last, [$tables[0] . '.' . $target]);
-        } else {
-            return false;
-        }
-    } else {
-        $x++;
-        if ($x > 30) {
-            //Too much recursion. Abort.
-            return false;
-        }
-        foreach ($tables as $table) {
-            if ($table == 'state_translations' && ($target == 'device_id' || $target == 'sensor_id')) {
-                // workaround for state_translations
-                return array_merge($last, [
-                    'state_translations.state_index_id',
-                    'sensors_to_state_indexes.sensor_id',
-                    "sensors.$target",
-                ]);
-            } elseif ($table == 'application_metrics' && $target == 'device_id') {
-                return array_merge($last, [
-                    'application_metrics.app_id',
-                    "applications.$target",
-                ]);
-            } elseif ($table == 'locations' && $target == 'device_id') {
-                return array_merge($last, [
-                    'locations.id',
-                    'devices.device_id.location_id',
-                ]);
-            }
-
-            $glues = dbFetchRows('SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_NAME = ? && COLUMN_NAME LIKE "%\_id"', [$table]);
-            if (count($glues) == 1 && $glues[0]['COLUMN_NAME'] != $target) {
-                //Search for new candidates to expand
-                $ntables = [];
-                [$tmp] = explode('_', (string) $glues[0]['COLUMN_NAME'], 2);
-                $ntables[] = $tmp;
-                $ntables[] = $tmp . 's';
-                $tmp = dbFetchRows('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_NAME LIKE "' . substr((string) $table, 0, -1) . '_%" && TABLE_NAME != "' . $table . '"');
-                foreach ($tmp as $expand) {
-                    $ntables[] = $expand['TABLE_NAME'];
-                }
-                $tmp = ResolveGlues($ntables, $target, $x++, array_merge($tables, $ntables), array_merge($last, [$table . '.' . $glues[0]['COLUMN_NAME']]));
-                if (is_array($tmp)) {
-                    return $tmp;
-                }
-            } else {
-                foreach ($glues as $glue) {
-                    if ($glue['COLUMN_NAME'] == $target) {
-                        return array_merge($last, [$table . '.' . $target]);
-                    } else {
-                        [$tmp] = explode('_', (string) $glue['COLUMN_NAME']);
-                        $tmp .= 's';
-                        if (! in_array($tmp, $tables) && ! in_array($tmp, $hist)) {
-                            //Expand table
-                            $tmp = ResolveGlues([$tmp], $target, $x++, array_merge($tables, [$tmp]), array_merge($last, [$table . '.' . $glue['COLUMN_NAME']]));
-                            if (is_array($tmp)) {
-                                return $tmp;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    //You should never get here.
-    return false;
 }
 
 /**

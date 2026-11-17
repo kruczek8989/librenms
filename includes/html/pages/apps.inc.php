@@ -194,7 +194,7 @@ $graphs['exim-stats'] = [
 $graphs['php-fpm'] = [
     'overview_combined',
     'overview_slow_requests',
-    'overview_max_childen_reached',
+    'overview_max_children_reached',
     'v1_last_request_cpu',
 ];
 $graphs['nvidia'] = [
@@ -645,6 +645,21 @@ $graphs['i2pd'] = [
     'tunnels_successrate',
     'peers',
     'total_bytes',
+];
+$graphs['syslog-ng'] = [
+    'center',
+    'batch_size_avg',
+    'batch_size_max',
+    'memory_usage',
+    'msg_size_avg',
+    'connections',
+    'discarded',
+    'dropped',
+    'processed',
+    'queued',
+    'truncated_bytes',
+    'truncated_count',
+    'written',
 ];
 
 echo '<div class="panel panel-default">';

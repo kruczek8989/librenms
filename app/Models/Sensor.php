@@ -3,22 +3,26 @@
 namespace App\Models;
 
 use App\Facades\LibrenmsConfig;
-use App\Models\Traits\HasThresholds;
+use App\Observers\SensorObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use LibreNMS\Enum\SensorCategory;
 use LibreNMS\Enum\SensorState;
+use LibreNMS\Enum\SensorType;
+use LibreNMS\Interfaces\Models\HasSyncProtectedAttributes;
 use LibreNMS\Interfaces\Models\Keyable;
 use LibreNMS\Util\Number;
 use LibreNMS\Util\Rewrite;
 use LibreNMS\Util\Time;
 
-class Sensor extends DeviceRelatedModel implements Keyable
+#[ObservedBy([SensorObserver::class])]
+class Sensor extends SensorModel implements HasSyncProtectedAttributes, Keyable
 {
     use HasFactory;
-    use HasThresholds;
 
     public $timestamps = false;
     protected $primaryKey = 'sensor_id';
@@ -42,6 +46,7 @@ class Sensor extends DeviceRelatedModel implements Keyable
         'entPhysicalIndex_measured',
         'user_func',
         'group',
+        'category',
         'rrd_type',
     ];
 
@@ -53,7 +58,8 @@ class Sensor extends DeviceRelatedModel implements Keyable
     protected function casts(): array
     {
         return [
-            // 'sensor_class' => SensorEnum::class, // TODO
+            // 'sensor_class' => SensorType::class, // TODO
+            'category' => SensorCategory::class,
         ];
     }
 
@@ -69,9 +75,12 @@ class Sensor extends DeviceRelatedModel implements Keyable
         return __('sensors.' . $this->sensor_class . '.long');
     }
 
-    public function unit(): string
+    /**
+     * @param  bool  $userPreference  convert to the user's preferred unit, otherwise return the stored unit
+     */
+    public function unit(bool $userPreference = true): string
     {
-        if ($this->sensor_class == 'temperature') {
+        if ($userPreference && $this->sensor_class == 'temperature') {
             /** @var ?User $user */
             $user = auth()->user();
 
@@ -102,8 +111,8 @@ class Sensor extends DeviceRelatedModel implements Keyable
             return $field == 'sensor_current' ? 'NaN' : '-';
         }
 
-        if (in_array($this->rrd_type, ['COUNTER', 'DERIVE', 'DCOUNTER', 'DDERIVE'])) {
-            //compute and display an approx rate for this sensor
+        if ($field == 'sensor_current' && in_array($this->rrd_type, ['COUNTER', 'DERIVE', 'DCOUNTER', 'DDERIVE'])) {
+            //compute and display an approx rate for this sensor, limits are configured as values and shown as is
             $value = Number::formatSi(max(0, $value - $this->sensor_prev) / LibrenmsConfig::get('rrd.step', 300), 2, 3, '');
         }
 
@@ -113,7 +122,7 @@ class Sensor extends DeviceRelatedModel implements Keyable
         return match ($this->sensor_class) {
             'temperature' => $user && UserPref::getPref($user, 'temp_units') == 'f' ? Rewrite::celsiusToFahrenheit($value) . ' °F' : round($value, 2) . ' °C',
             'state' => $this->currentTranslation()->state_descr ?? 'Unknown',
-            'current', 'power' => Number::formatSi($value, 3, 0, $this->unit()),
+            'current', 'power', 'frequency' => Number::formatSi($value, 3, 0, $this->unit()),
             'runtime' => Time::formatInterval($value * 60),
             'power_consumed' => trim(Number::formatSi($value * 1000, 5, 5, 'Wh')),
             'dbm' => round($value, 3) . ' ' . $this->unit(),
@@ -153,6 +162,16 @@ class Sensor extends DeviceRelatedModel implements Keyable
     public function translations(): BelongsToMany
     {
         return $this->belongsToMany(StateTranslation::class, 'sensors_to_state_indexes', 'sensor_id', 'state_index_id', 'sensor_id', 'state_index_id');
+    }
+
+    /**
+     * Custom limits set by a user are not overwritten by discovery
+     *
+     * @return string[]
+     */
+    public function getSyncProtectedAttributes(): array
+    {
+        return $this->sensor_custom === 'Yes' ? self::LIMITS : [];
     }
 
     public function getCompositeKey(): string
@@ -237,6 +256,11 @@ class Sensor extends DeviceRelatedModel implements Keyable
             'type' => $this->sensor_type,
             'index' => $this->sensor_index,
         ];
+    }
+
+    public function icon(): string
+    {
+        return SensorType::tryFrom($this->sensor_class)->icon() ?? '';
     }
 
     public function __toString(): string

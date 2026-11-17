@@ -1,6 +1,6 @@
 os: moxa-nport
 text: Moxa
-type: appliance
+type: management
 icon: moxa
 over:
     - { graph: device_bits, text: 'Device Traffic' }
@@ -10,3 +10,4 @@ discovery:
     -
         sysObjectID:
             - .1.3.6.1.4.1.8691.2.7
+            - .1.3.6.1.4.1.8691.2.8

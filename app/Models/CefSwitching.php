@@ -26,9 +26,20 @@
 
 namespace App\Models;
 
-class CefSwitching extends DeviceRelatedModel
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use LibreNMS\Interfaces\Models\Keyable;
+
+class CefSwitching extends DeviceRelatedModel implements Keyable
 {
+    use HasFactory;
     public $timestamps = false;
     protected $table = 'cef_switching';
     protected $primaryKey = 'cef_switching_id';
+
+    protected $fillable = ['device_id', 'entPhysicalIndex', 'afi', 'cef_index', 'cef_path', 'drop', 'punt', 'punt2host', 'drop_prev', 'punt_prev', 'punt2host_prev', 'updated', 'updated_prev'];
+
+    public function getCompositeKey(): string
+    {
+        return $this->device_id . '-' . (int) $this->entPhysicalIndex . '-' . $this->afi . '-' . (int) $this->cef_index;
+    }
 }

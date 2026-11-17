@@ -3,38 +3,28 @@
 namespace App\Actions\Device;
 
 use App\Models\Device;
-use LibreNMS\Enum\AvailabilitySource;
 
 class SetDeviceAvailability
 {
-    public function __construct(
-        private readonly UpdateDeviceOutage $updateDeviceOutage,
-    ) {
-    }
-
     /**
+     * Set status and status_reason fields based on availability results.
+     * Does not persist to the database unless $commit is true.
+     *
      * @param  Device  $device
-     * @param  bool  $available
-     * @param  AvailabilitySource  $source
      * @param  bool  $commit  Save changes to the database
      * @return bool true if the status changed
      */
-    public function execute(Device $device, bool $available, AvailabilitySource $source = AvailabilitySource::None, bool $commit = true): bool
+    public function execute(Device $device, bool $commit = true): bool
     {
-        // if device was down and is now up, if reason was snmp and source is icmp, ignore
-        if ($available && ! $device->status && $device->status_reason == AvailabilitySource::Snmp->value) {
-            if ($source == AvailabilitySource::Icmp) {
-                return false;
-            }
-        }
+        $failedAvailabilityMethods = $device->polling()->failedAvailabilityChecks();
 
-        $device->status = $available;
-        $device->status_reason = $available ? AvailabilitySource::None->value : $source->value;
+        $device->status = $failedAvailabilityMethods->isEmpty();
+        $device->status_reason = $failedAvailabilityMethods->map(fn ($m) => $m->method_type->value)->implode(',');
+
         $changed = $device->isDirty('status');
 
         if ($commit) {
             $device->save();
-            $this->updateDeviceOutage->execute($device, $available);
         }
 
         return $changed;

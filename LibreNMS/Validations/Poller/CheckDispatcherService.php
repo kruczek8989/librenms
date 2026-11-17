@@ -26,6 +26,7 @@
 
 namespace LibreNMS\Validations\Poller;
 
+use App\Facades\LibrenmsConfig;
 use App\Models\Device;
 use App\Models\Poller;
 use App\Models\PollerCluster;
@@ -39,8 +40,11 @@ class CheckDispatcherService implements \LibreNMS\Interfaces\Validation
      */
     public function validate(): ValidationResult
     {
-        if (PollerCluster::exists()) {
+        if (PollerCluster::isQueueWorker(false)->exists()) {
             return $this->checkDispatchService();
+        } elseif (LibrenmsConfig::get('schedule_type.poller') == 'dispatcher') {
+            // We have explicity set the scheduler to be the dispatcher, but no nodes have registered
+            return ValidationResult::fail(trans('validation.validations.poller.CheckDispatcherService.fail'));
         }
 
         return ValidationResult::ok(trans('validation.validations.poller.CheckDispatcherService.not_detected'));
@@ -56,10 +60,10 @@ class CheckDispatcherService implements \LibreNMS\Interfaces\Validation
 
     private function checkDispatchService(): ValidationResult
     {
-        if (PollerCluster::isActive()->exists()) {
+        if (PollerCluster::isQueueWorker(false)->isActive()->exists()) {
             // check for inactive nodes
             $this_node_id = config('librenms.node_id');
-            $inactive = PollerCluster::isInactive()->get()
+            $inactive = PollerCluster::isQueueWorker(false)->isInactive()->get()
                 ->map(function (PollerCluster $node) use ($this_node_id) {
                     $name = $node->poller_name ?: $node->node_id;
 

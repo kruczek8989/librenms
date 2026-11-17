@@ -5,14 +5,16 @@ namespace LibreNMS\Modules;
 use App\Models\Device;
 use App\Observers\ModuleModelObserver;
 use LibreNMS\DB\SyncsModels;
+use LibreNMS\Enum\PollingMethodType;
 use LibreNMS\Interfaces\Data\DataStorageInterface;
 use LibreNMS\Interfaces\Module;
 use LibreNMS\OS;
-use LibreNMS\Polling\ModuleStatus;
+use LibreNMS\Traits\RequiresPollingMethod;
 
 class HrDevice implements Module
 {
     use SyncsModels;
+    use RequiresPollingMethod;
 
     /**
      * @inheritDoc
@@ -22,18 +24,15 @@ class HrDevice implements Module
         return [];
     }
 
-    /**
-     * @inheritDoc
-     */
-    public function shouldDiscover(OS $os, ModuleStatus $status): bool
+    public function pollingMethods(Device $device): array
     {
-        return $status->isEnabledAndDeviceUp($os->getDevice());
+        return [PollingMethodType::Snmp];
     }
 
     /**
      * @inheritDoc
      */
-    public function shouldPoll(OS $os, ModuleStatus $status): bool
+    public function shouldPoll(OS $os): bool
     {
         return false;
     }

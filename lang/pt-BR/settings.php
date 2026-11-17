@@ -896,6 +896,10 @@ return [
                 'help' => 'Desativa a criação de interrupções e a diminuição da disponibilidade para dispositivos em modo de manutenção.',
             ],
         ],
+        'graph_stat_percentile_disable' => [
+            'description' => 'Desativar percentual para gráficos de estatísticas globalmente',
+            'help' => 'Desativa a exibição dos valores e linhas percentuais para gráficos que exibem esses',
+        ],
         'graphs' => [
             'port_speed_zoom' => [
                 'description' => 'Ampliar gráficos de porta para a velocidade da porta',
@@ -1417,10 +1421,6 @@ return [
         'ping' => [
             'description' => 'Caminho para ping',
         ],
-        'ping_rrd_step' => [
-            'description' => 'Frequência de Ping',
-            'help' => 'Com que frequência executar. Valor padrão para todos os nós. Aviso! Se você mudar isso, você deve fazer mudanças adicionais. Verifique os documentos de Fast Ping.',
-        ],
         'poller_modules' => [
             'unix-agent' => [
                 'description' => 'Agente Unix',
@@ -1455,7 +1455,7 @@ return [
             'ucd-mib' => [
                 'description' => 'Mib Ucd',
             ],
-            'ipSystemStats' => [
+            'ip-system-stats' => [
                 'description' => 'ipSystemStats',
             ],
             'ports' => [
@@ -1582,7 +1582,7 @@ return [
                 'description' => 'URL',
                 'help' => 'A URL do Prometheus Push Gateway para enviar dados',
             ],
-            'Job' => [
+            'job' => [
                 'description' => 'Tarefa',
                 'help' => 'Etiqueta de tarefa para métricas exportadas',
             ],
@@ -1628,10 +1628,6 @@ return [
             ],
         ],
         'reporting' => [
-            'error' => [
-                'description' => 'Enviar Relatórios de Erros',
-                'help' => 'Envia determinados erros para o LibreNMS para análise e correção',
-            ],
             'usage' => [
                 'description' => 'Enviar Relatórios de Uso',
                 'help' => 'Envia relatório de uso e versão para o LibreNMS. Para excluir estatísticas anônimas, visite a página Sobre. Você pode visualizar estatísticas em https://stats.librenms.org',
@@ -1639,10 +1635,6 @@ return [
             'dump_errors' => [
                 'description' => 'Despejar erros de depuração (Poderá corromper sua instalação)',
                 'help' => 'Despejar erros que normalmente são ocultados para que você, como desenvolvedor, possa encontrar e corrigir possíveis problemas.',
-            ],
-            'throttle' => [
-                'description' => 'Limitar Relatórios de Erros',
-                'help' => 'Relatórios serão enviados apenas a determinado quantidade de segundos. Sem isso, se você tiver um erro em um código comum, os relatórios podem sair fora do controle. Defina como 0 para desativar a limitação.',
             ],
         ],
         'route_purge' => [
@@ -2002,10 +1994,6 @@ return [
                 'description' => 'Definir a altura mínima do gráfico',
                 'help' => 'Altura mínima do gráfico (padrão: 300)',
             ],
-            'graph_stat_percentile_disable' => [
-                'description' => 'Desativar percentual para gráficos de estatísticas globalmente',
-                'help' => 'Desativa a exibição dos valores e linhas percentuais para gráficos que exibem esses',
-            ],
         ],
         'device_display_default' => [
             'description' => 'Nome de Exibição do Dispositivo',
@@ -2029,21 +2017,23 @@ return [
             'description' => 'Exibir dependências dos dispositivos no mapa de localização',
             'help' => 'Exibir links entre dispositivos no mapa de localização com base nas dependências dos pais',
         ],
-        'smokeping.integration' => [
-            'description' => 'Habilitar',
-            'help' => 'Habilitar integração com Smokeping',
-        ],
-        'smokeping.dir' => [
-            'description' => 'Caminho para rrds',
-            'help' => 'Caminho completo para os RRDs do Smokeping',
-        ],
-        'smokeping.pings' => [
-            'description' => 'Pings',
-            'help' => 'Número de pings configurados no Smokeping',
-        ],
-        'smokeping.url' => [
-            'description' => 'URL para smokeping',
-            'help' => 'URL completa para a GUI do smokeping',
+        'smokeping' => [
+            'integration' => [
+                'description' => 'Habilitar',
+                'help' => 'Habilitar integração com Smokeping',
+            ],
+            'dir' => [
+                'description' => 'Caminho para rrds',
+                'help' => 'Caminho completo para os RRDs do Smokeping',
+            ],
+            'pings' => [
+                'description' => 'Pings',
+                'help' => 'Número de pings configurados no Smokeping',
+            ],
+            'url' => [
+                'description' => 'URL para smokeping',
+                'help' => 'URL completa para a GUI do smokeping',
+            ],
         ],
     ],
     'twofactor' => [

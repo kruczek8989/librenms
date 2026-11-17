@@ -20,7 +20,7 @@ class BgpPeerPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $this->hasGlobalPermission($user, 'view')
+        return $this->hasGlobalPermission($user, 'view', true)
             || $this->hasGlobalPermission($user, 'viewAll')
             || $this->hasGlobalPermission($user, 'update');
     }
@@ -42,15 +42,17 @@ class BgpPeerPolicy
             return true;
         }
 
-        return $this->hasGlobalPermission($user, 'view')
+        return $this->hasGlobalPermission($user, 'view', true)
             && Permissions::canAccessDevice($bgpPeer->device_id, $user);
     }
 
     /**
      * Determine whether the user can update the model.
+     * Without a model, only the global permission is checked.
      */
-    public function update(User $user): bool
+    public function update(User $user, ?BgpPeer $bgpPeer = null): bool
     {
-        return $this->hasGlobalPermission($user, 'update');
+        return $this->hasGlobalPermission($user, 'update')
+            && ($bgpPeer === null || Permissions::canAccessDevice($bgpPeer->device_id, $user));
     }
 }

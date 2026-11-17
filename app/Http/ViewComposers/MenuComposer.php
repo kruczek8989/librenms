@@ -29,25 +29,30 @@ namespace App\Http\ViewComposers;
 use App\Facades\LibrenmsConfig;
 use App\Models\AlertRule;
 use App\Models\BgpPeer;
+use App\Models\Bill;
 use App\Models\CustomMap;
 use App\Models\Dashboard;
 use App\Models\Device;
 use App\Models\DeviceGroup;
 use App\Models\Link;
 use App\Models\Location;
+use App\Models\Mempool;
 use App\Models\Notification;
 use App\Models\Package;
+use App\Models\Port;
 use App\Models\PortGroup;
 use App\Models\PortsNac;
-use App\Models\User;
+use App\Models\Processor;
+use App\Models\Sensor;
+use App\Models\Storage;
 use App\Models\UserPref;
+use App\Models\Vlan;
 use App\Models\Vminfo;
 use App\Models\WirelessSensor;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
+use LibreNMS\Enum\DeviceType;
 use LibreNMS\Enum\WirelessSensorType;
 use LibreNMS\Interfaces\Plugins\Hooks\MenuEntryHook;
 use LibreNMS\Plugins;
@@ -65,11 +70,12 @@ class MenuComposer
     public function compose(View $view)
     {
         $vars = [];
-        /** @var User $user */
-        $user = Auth::user();
+        $request = request();
+        $user = $request->user();
         $site_style = session('applied_site_style');
 
         //global Settings
+        $vars['is_dashboard'] = $request->routeIs('home') || $request->routeIs('overview');
         $vars['hide_dashboard_editor'] = UserPref::getPref($user, 'hide_dashboard_editor');
         // end global Settings
 
@@ -79,13 +85,13 @@ class MenuComposer
         $vars['project_name'] = LibrenmsConfig::get('project_name', 'LibreNMS');
 
         //Dashboards
-        $vars['dashboards'] = Dashboard::select('dashboard_id', 'dashboard_name')->allAvailable($user)->orderBy('dashboard_name')->get();
+        $vars['dashboards'] = Dashboard::select('dashboard_id', 'dashboard_name')->hasAccess($user)->orderBy('dashboard_name')->get();
 
         // Device menu
         $vars['device_groups'] = DeviceGroup::hasAccess($user)->orderBy('name')->get(['device_groups.id', 'name', 'desc']);
         $vars['package_count'] = Package::hasAccess($user)->count();
 
-        $configDeviceTypes = Arr::keyBy(LibrenmsConfig::get('device_types'), 'type');
+        $deviceTypeIcons = DeviceType::icons();
         $vars['device_types'] = Device::hasAccess($user)
             ->select('type')
             ->distinct()
@@ -93,7 +99,7 @@ class MenuComposer
             ->orderBy('type')
             ->pluck('type')
             ->keyBy(fn ($type) => $type)
-            ->map(fn ($type) => $configDeviceTypes[$type]['icon'] ?? 'angle-double-right');
+            ->map(fn ($type) => $deviceTypeIcons[$type] ?? 'angle-double-right');
         $vars['no_devices_added'] = ! Device::hasAccess($user)->exists();
 
         $vars['locations'] = (LibrenmsConfig::get('show_locations') && LibrenmsConfig::get('show_locations_dropdown')) ?
@@ -102,7 +108,7 @@ class MenuComposer
         $vars['show_vmwinfo'] = $user->can('viewAny', \App\Models\Vminfo::class) && Vminfo::hasAccess($user)->exists();
         $vars['show_device_extra_divider'] = $vars['show_vmwinfo']
             || $user->can('viewAny', \App\Models\DeviceGroup::class)
-            || $user->can('update', \App\Models\Device::class);
+            || $user->can('device.update');
 
         //Maps
         $vars['links'] = Link::exists();
@@ -124,6 +130,9 @@ class MenuComposer
         }
 
         // Port menu
+        $vars['show_ports_menu'] = Gate::allows('viewAny', Port::class)
+            || Gate::allows('viewAny', Vlan::class)
+            || Gate::allows('viewAny', Bill::class);
         $vars['port_counts'] = ObjectCache::portCounts(['errored', 'ignored', 'deleted', 'shutdown', 'down']);
         $vars['port_counts']['pseudowire'] = LibrenmsConfig::get('enable_pseudowires') ? ObjectCache::portCounts(['pseudowire'])['pseudowire'] : 0;
 
@@ -152,6 +161,10 @@ class MenuComposer
         $vars['port_nac'] = PortsNac::hasAccess($user)->exists();
 
         // Sensor menu
+        $vars['show_health_menu'] = Gate::allows('viewAny', Sensor::class)
+        || Gate::allows('viewAny', Mempool::class)
+        || Gate::allows('viewAny', Processor::class)
+        || Gate::allows('viewAny', Storage::class);
         $vars['sensor_menu'] = ObjectCache::sensors();
 
         // Wireless menu
@@ -177,7 +190,7 @@ class MenuComposer
             if ($routing_count['vrf']) {
                 $routing_menu[] = [
                     [
-                        'url' => 'vrf',
+                        'url' => route('routing.vrf'),
                         'icon' => 'arrows',
                         'text' => 'VRFs',
                     ],
@@ -187,7 +200,7 @@ class MenuComposer
             if ($routing_count['mpls']) {
                 $routing_menu[] = [
                     [
-                        'url' => 'mpls',
+                        'url' => route('routing.mpls'),
                         'icon' => 'tag',
                         'text' => 'MPLS',
                     ],
@@ -197,7 +210,7 @@ class MenuComposer
             if ($routing_count['ospf']) {
                 $routing_menu[] = [
                     [
-                        'url' => 'ospf',
+                        'url' => route('routing.ospf'),
                         'icon' => 'circle-o-notch fa-rotate-180',
                         'text' => 'OSPF Devices',
                     ],
@@ -207,7 +220,7 @@ class MenuComposer
             if ($routing_count['ospfv3']) {
                 $routing_menu[] = [
                     [
-                        'url' => 'ospfv3',
+                        'url' => route('routing.ospfv3'),
                         'icon' => 'circle-o-notch fa-rotate-180',
                         'text' => 'OSPFv3 Devices',
                     ],
@@ -217,7 +230,7 @@ class MenuComposer
             if ($routing_count['isis']) {
                 $routing_menu[] = [
                     [
-                        'url' => 'isis',
+                        'url' => route('routing.isis'),
                         'icon' => 'arrows-alt',
                         'text' => 'ISIS Adjacencies',
                     ],
@@ -227,7 +240,7 @@ class MenuComposer
             if ($routing_count['cisco-otv']) {
                 $routing_menu[] = [
                     [
-                        'url' => 'cisco-otv',
+                        'url' => route('routing.cisco-otv'),
                         'icon' => 'exchange',
                         'text' => 'Cisco OTV',
                     ],
@@ -239,17 +252,17 @@ class MenuComposer
                 $vars['bgp_alerts'] = BgpPeer::hasAccess($user)->inAlarm()->count();
                 $routing_menu[] = [
                     [
-                        'url' => 'bgp/type=all/graph=NULL',
+                        'url' => route('routing.bgp'),
                         'icon' => 'circle-o',
                         'text' => 'BGP All Sessions',
                     ],
                     [
-                        'url' => 'bgp/type=external/graph=NULL',
+                        'url' => route('routing.bgp', ['type' => 'external']),
                         'icon' => 'external-link',
                         'text' => 'BGP External',
                     ],
                     [
-                        'url' => 'bgp/type=internal/graph=NULL',
+                        'url' => route('routing.bgp', ['type' => 'internal']),
                         'icon' => 'external-link fa-rotate-180',
                         'text' => 'BGP Internal',
                     ],
@@ -262,7 +275,7 @@ class MenuComposer
             if ($routing_count['cef']) {
                 $routing_menu[] = [
                     [
-                        'url' => 'cef',
+                        'url' => route('routing.cef'),
                         'icon' => 'exchange',
                         'text' => 'Cisco CEF',
                     ],
@@ -272,18 +285,19 @@ class MenuComposer
         $vars['routing_menu'] = $routing_menu;
 
         // Alert menu
-        $alert_status = AlertRule::select('severity')
+        $alert_counts = AlertRule::selectRaw('severity, COUNT(*) as count')
             ->isActive()
             ->hasAccess($user)
             ->leftJoin('devices', 'alerts.device_id', '=', 'devices.device_id')
             ->where('devices.disabled', '=', '0')
             ->where('devices.ignore', '=', '0')
             ->groupBy('severity')
-            ->pluck('severity');
+            ->pluck('count', 'severity');
+        $vars['alert_count'] = $alert_counts->sum();
 
-        if ($alert_status->contains('critical')) {
+        if ($alert_counts->has('critical')) {
             $vars['alert_menu_class'] = 'danger';
-        } elseif ($alert_status->contains('warning')) {
+        } elseif ($alert_counts->has('warning')) {
             $vars['alert_menu_class'] = 'warning';
         } else {
             $vars['alert_menu_class'] = 'success';
@@ -301,10 +315,6 @@ class MenuComposer
 
         // Poller Settings
         $vars['poller_clusters'] = \App\Models\PollerCluster::exists();
-
-        // Search bar
-        $vars['typeahead_limit'] = LibrenmsConfig::get('webui.global_search_result_limit');
-        $vars['global_search_ctrlf_focus'] = UserPref::getPref(Auth::user(), 'global_search_ctrlf_focus');
 
         // Plugins
         $vars['has_v1_plugins'] = Plugins::count() != 0;

@@ -25,17 +25,19 @@ use App\Models\Device;
 use App\Models\Sla;
 use App\Observers\ModuleModelObserver;
 use LibreNMS\DB\SyncsModels;
+use LibreNMS\Enum\PollingMethodType;
 use LibreNMS\Interfaces\Data\DataStorageInterface;
 use LibreNMS\Interfaces\Discovery\SlaDiscovery;
 use LibreNMS\Interfaces\Module;
 use LibreNMS\Interfaces\Polling\SlaPolling;
 use LibreNMS\OS;
-use LibreNMS\Polling\ModuleStatus;
 use LibreNMS\RRD\RrdDefinition;
+use LibreNMS\Traits\RequiresPollingMethod;
 
 class Slas implements Module
 {
     use SyncsModels;
+    use RequiresPollingMethod;
 
     /**
      * @inheritDoc
@@ -45,9 +47,14 @@ class Slas implements Module
         return [];
     }
 
-    public function shouldDiscover(OS $os, ModuleStatus $status): bool
+    public function pollingMethods(Device $device): array
     {
-        return $status->isEnabledAndDeviceUp($os->getDevice()) && $os instanceof SlaDiscovery;
+        return [PollingMethodType::Snmp];
+    }
+
+    public function shouldDiscover(OS $os): bool
+    {
+        return $this->hasAvailableMethod($os) && $os instanceof SlaDiscovery;
     }
 
     /**
@@ -65,9 +72,9 @@ class Slas implements Module
         }
     }
 
-    public function shouldPoll(OS $os, ModuleStatus $status): bool
+    public function shouldPoll(OS $os): bool
     {
-        return $status->isEnabledAndDeviceUp($os->getDevice()) && $os instanceof SlaPolling;
+        return $this->hasAvailableMethod($os) && $os instanceof SlaPolling;
     }
 
     /**

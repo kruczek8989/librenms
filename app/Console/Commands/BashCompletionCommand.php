@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Device;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -55,11 +54,18 @@ class BashCompletionCommand extends Command
                     // ignore?
                 }
 
-                // check if the command can complete arguments
-                if (method_exists($command, 'completeArgument')) {
+                $optionPrevious = $this->optionPreviousFromLine($current, $previous, end($words));
+                $option = $this->optionExpectsValue($current, $optionPrevious, $command_def);
+
+                // check if the command can complete arguments (not when completing an option value)
+                if (! $option && method_exists($command, 'completeArgument')) {
                     foreach ($input->getArguments() as $name => $value) {
-                        if ($current == $value) {
-                            $values = $command->completeArgument($name, $value, $previous);
+                        // array arguments complete their last (current) element
+                        $isCurrent = is_array($value)
+                            ? $current === '' || end($value) === $current
+                            : $current == $value;
+                        if ($isCurrent) {
+                            $values = $command->completeArgument($name, $current, $previous);
                             if (! empty($values)) {
                                 echo implode(PHP_EOL, $values);
 
@@ -70,13 +76,17 @@ class BashCompletionCommand extends Command
                     }
                 }
 
-                if ($option = $this->optionExpectsValue($current, $previous, $command_def)) {
+                if ($option) {
                     $command_completions = null;
+                    [$optionPrefix, $optionCurrent] = $this->splitOptionValue($current);
                     if (method_exists($command, 'completeOptionValue')) {
-                        $command_completions = $command->completeOptionValue($option, $current);
+                        $command_completions = $command->completeOptionValue($option, $optionCurrent, $input);
                     }
 
-                    $completions = $command_completions ?? $this->completeOptionValue($option, $current);
+                    $completions = $command_completions ?? $this->completeOptionValue($option, $optionCurrent);
+                    if ($optionPrefix !== '') {
+                        $completions = $completions->map(fn ($completion) => $optionPrefix . $completion);
+                    }
                 } else {
                     $completions = new Collection();
                     if (! Str::startsWith($previous, '-')) {
@@ -238,20 +248,35 @@ class BashCompletionCommand extends Command
      */
     private function completeArguments($command, $partial, $current_word)
     {
-        switch ($command) {
-            case 'device:remove':
-                // fall through
-            case 'device:rename':
-                $device_query = Device::select('hostname')->limit(5)->orderBy('hostname');
-                if ($partial) {
-                    $device_query->where('hostname', 'like', $partial . '%');
-                }
+        return match ($command) {
+            'help' => $this->completeCommand($current_word),
+            default => new Collection(),
+        };
+    }
 
-                return $device_query->pluck('hostname');
-            case 'help':
-                return $this->completeCommand($current_word);
-            default:
-                return new Collection();
+    /**
+     * @return array{string, string}
+     */
+    private function splitOptionValue(string $current): array
+    {
+        if (str_starts_with($current, '--') && str_contains($current, '=')) {
+            [$name, $value] = explode('=', $current, 2);
+
+            return ["$name=", $value];
         }
+
+        return ['', $current];
+    }
+
+    private function optionPreviousFromLine(string $current, string $previous, string|false $lineToken): string
+    {
+        if (is_string($lineToken) && str_starts_with($lineToken, '--') && str_contains($lineToken, '=')) {
+            [$option, $value] = explode('=', $lineToken, 2);
+            if (! str_contains($current, '=') && $current === $value) {
+                return $option;
+            }
+        }
+
+        return $previous;
     }
 }

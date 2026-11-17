@@ -28,15 +28,20 @@ namespace App\Http\Controllers\Select;
 
 use App\Facades\LibrenmsConfig;
 use App\Models\Device;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
+use LibreNMS\Enum\DeviceType;
 
+/**
+ * @extends SelectController<Device>
+ */
 class DeviceFieldController extends SelectController
 {
     /**
      * Defines validation rules (will override base validation rules for select2 responses too)
-     *
-     * @return array
      */
-    protected function rules()
+    protected function rules(): array
     {
         return [
             'field' => 'required|in:features,hardware,os,type,version',
@@ -45,23 +50,19 @@ class DeviceFieldController extends SelectController
 
     /**
      * Defines search fields will be searched in order
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return array
      */
-    protected function searchFields($request)
+    protected function searchFields(Request $request): array
     {
         return [$request->input('field')];
     }
 
     /**
      * Defines the base query for this resource
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
      */
-    protected function baseQuery($request)
+    protected function baseQuery(Request $request): Builder
     {
+        $this->authorize('viewAny', Device::class);
+
         $field = $request->input('field');
         $query = Device::hasAccess($request->user())
             ->select($field)->orderBy($field)->distinct();
@@ -74,22 +75,22 @@ class DeviceFieldController extends SelectController
     }
 
     /**
-     * @param  Device  $device
-     * @return array
+     * @param  Device  $model
+     * @return array{id: int|string, text: string, icon?: string}
      */
-    public function formatItem($device)
+    public function formatItem(Model $model): array
     {
         $field = \Request::input('field');
 
-        $text = $device[$field];
+        $text = $model->$field;
         if ($field == 'os') {
             $text = LibrenmsConfig::getOsSetting($text, 'text');
         } elseif ($field == 'type') {
-            $text = ucfirst((string) $text);
+            $text = DeviceType::labelFor((string) $text);
         }
 
         return [
-            'id' => $device[$field],
+            'id' => $model->$field,
             'text' => $text,
         ];
     }

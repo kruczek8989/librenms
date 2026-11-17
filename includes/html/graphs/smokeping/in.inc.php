@@ -1,8 +1,11 @@
 <?php
 
+use App\Facades\DeviceCache;
 use App\Facades\LibrenmsConfig;
+use LibreNMS\Exceptions\RrdGraphException;
+use LibreNMS\Util\Smokeping;
 
-$src = device_by_id_cache($vars['src']);
+$src = DeviceCache::get($vars['src']);
 
 // This is my translation of Smokeping's graphing.
 // Thanks to Bill Fenner for Perl->Human translation:>
@@ -10,7 +13,6 @@ $scale_min = 0;
 $scale_rigid = true;
 
 require 'includes/html/graphs/common.inc.php';
-require 'includes/html/graphs/device/smokeping_common.inc.php';
 
 $i = 0;
 $pings = LibrenmsConfig::get('smokeping.pings');
@@ -23,26 +25,22 @@ if ($width > '500') {
     $descr_len = (12 + round(($width - 275) / 8));
 }
 
+$unit_text ??= '';
+
 if ($width > '500') {
     $rrd_options[] = 'COMMENT:' . substr(str_pad((string) $unit_text, $descr_len + 5), 0, $descr_len + 5) . " RTT      Loss    SDev   RTT\:SDev                              \l";
 } else {
     $rrd_options[] = 'COMMENT:' . substr(str_pad((string) $unit_text, $descr_len + 5), 0, $descr_len + 5) . " RTT      Loss    SDev   RTT\:SDev                              \l";
 }
 
-$filename_dir = generate_smokeping_file($device);
-if ($src['hostname'] == LibrenmsConfig::get('own_hostname')) {
-    $filename = $filename_dir . $device['hostname'] . '.rrd';
-    if (! Rrd::checkRrdExists($filename)) {
-        // Try with dots in hostname replaced by underscores
-        $filename = $filename_dir . str_replace('.', '_', $device['hostname']) . '.rrd';
-    }
-} else {
-    $filename = $filename_dir . $device['hostname'] . '~' . $src['hostname'] . '.rrd';
-    if (! Rrd::checkRrdExists($filename)) {
-        // Try with dots in hostname replaced by underscores
-        $filename = $filename_dir . str_replace('.', '-', $device['hostname']) . '~' . $src['hostname'] . '.rrd';
-    }
+$smokeping = new Smokeping(DeviceCache::getPrimary());
+$file = $smokeping->getFiles()['in'][$device->hostname][$src->hostname] ?? null;
+
+if ($file === null) {
+    throw new RrdGraphException('No Data');
 }
+
+$filename = $smokeping->rrdFileName($file);
 
 if (! LibrenmsConfig::has("graph_colours.$colourset.$iter")) {
     $iter = 0;
@@ -64,7 +62,7 @@ foreach (range(1, $pings) as $p) {
     $rrd_options[] = 'CDEF:p' . $i . 'p' . $p . '=pin' . $i . 'p' . $p . ',UN,0,pin' . $i . 'p' . $p . ',IF';
 }
 
-unset($pings_options, $m_options, $sdev_options);
+$pings_options = $m_options = $sdev_options = '';
 
 foreach (range(2, $pings) as $p) {
     $pings_options .= ',p' . $i . 'p' . $p . ',UN,+';

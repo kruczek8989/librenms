@@ -25,8 +25,9 @@ $options['f'] = isset($options['f']) ? $options['f'] : '';
 if ($options['f'] === 'composer_get_plugins') {
     $output = [];
 
-    $plugins = is_file('composer.plugins.json') ?
-        json_decode(file_get_contents('composer.plugins.json')) : [];
+    $plugins_file = getenv('LIBRENMS_COMPOSER_PLUGINS') ?: 'composer.plugins.json';
+    $plugins = is_file($plugins_file) ?
+        json_decode(file_get_contents($plugins_file)) : [];
 
     foreach ($plugins->require ?? [] as $package => $version) {
         $output[] = "$package:$version";
@@ -53,8 +54,18 @@ if ($options['f'] === 'update') {
         exit(0);
     }
 
+    $on_days = LibrenmsConfig::get('update_on_days', []);
+
+    if (is_array($on_days) && ! empty($on_days)) {
+        $today = strtolower(date('l')); // monday..sunday
+
+        if (! in_array($today, $on_days, true)) {
+            exit(0);
+        }
+    }
+
     if (LibrenmsConfig::get('update_channel') == 'master') {
-        exit(1);
+        exit(2);
     } elseif (LibrenmsConfig::get('update_channel') == 'release') {
         exit(3);
     }
@@ -174,13 +185,6 @@ if ($options['f'] === 'handle_notifiable') {
                     2
                 );
                 exit(1);
-            } elseif ($options['r'] === 'python3-deps') {
-                Notifications::create($error_title,
-                    'Python 3 dependencies are missing. You need to install them via pip3 install -r requirements.txt or system packages to continue to receive updates.  If you do not install Python 3 and required packages, LibreNMS will continue to function but stop receiving bug fixes and updates.',
-                    'daily.sh',
-                    2
-                );
-                exit(1);
             }
         }
 
@@ -250,7 +254,7 @@ if ($options['f'] === 'purgeusers') {
         if ($purge > 0) {
             $users = \App\Models\AuthLog::where('datetime', '>=', \Carbon\Carbon::now()->subDays($purge))
                 ->distinct()->pluck('user')
-                ->merge(\App\Models\User::has('apiTokens')->pluck('username')) // don't purge users with api tokens
+                ->merge(\App\Models\User::has('tokens')->pluck('username')) // don't purge users with api tokens
                 ->unique();
 
             if (\App\Models\User::thisAuth()->whereNotIn('username', $users)->delete()) {
@@ -298,14 +302,6 @@ if ($options['f'] === 'notify') {
         } catch (Exception $e) {
             echo 'Failed to send update failed email. ' . $e->getMessage();
         }
-    }
-}
-
-if ($options['f'] === 'peeringdb') {
-    $lock = Cache::lock('peeringdb', 86000);
-    if ($lock->get()) {
-        cache_peeringdb();
-        $lock->release();
     }
 }
 

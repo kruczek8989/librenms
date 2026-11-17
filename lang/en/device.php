@@ -19,8 +19,49 @@ return [
     ],
 
     'never_polled' => 'Never polled',
+    'awaiting_discovery' => 'This device has not been discovered yet. This page will refresh automatically when discovery completes.',
+    'awaiting_discovery_edit' => 'This device has not been discovered yet.',
+    'discovery_complete' => 'Discovery complete, click to refresh.',
     'vm_host' => 'VM Host',
     'scheduled_maintenance' => 'Scheduled Maintenance',
+    'delete_device' => 'Delete Device',
+    'delete' => 'Delete :name',
+    'confirm_delete' => 'Are you sure you want to delete device :name?',
+    'deleted' => 'Deleted device :hostname.',
+    'please_select' => 'Select',
+    'warning_monitored' => 'Warning! This removes the device from monitoring.',
+    'warning_data' => 'It also removes historical data about this device, such as:',
+    'device_group' => 'Device Group',
+    'show_filter' => 'Show Filter',
+    'show_header' => 'Show Header',
+    'os' => 'OS',
+    'status' => 'Status',
+    'status_up' => 'Up',
+    'status_down' => 'Down',
+    'device_type' => 'Device Type',
+    'types' => [
+        'audiovisual' => 'Audiovisual',
+        'collaboration' => 'Collaboration',
+        'environment' => 'Environment',
+        'firewall' => 'Firewall',
+        'iot' => 'IoT',
+        'loadbalancer' => 'Load Balancer',
+        'management' => 'Management',
+        'network' => 'Network',
+        'optical' => 'Optical',
+        'power' => 'Power',
+        'printer' => 'Printer',
+        'security' => 'Security',
+        'server' => 'Server',
+        'storage' => 'Storage',
+        'surveillance' => 'Surveillance',
+        'timing' => 'Timing',
+        'voice' => 'Voice',
+        'wireless' => 'Wireless',
+        'workstation' => 'Workstation',
+    ],
+    'alerts_disabled' => 'Alerts Disabled',
+    'no_availability' => 'Warning: No availability sources are enabled for this device. At least one polling method must be enabled and set to affect availability, otherwise the device will ALWAYS show as up',
 
     'edit' => [
         'delete_device' => 'Delete Device',
@@ -30,11 +71,15 @@ return [
         'hostname_title' => 'Change the hostname used for name resolution',
         'hostname_ip' => 'Hostname / IP',
 
-        'display_title' => 'Display Name for this device.  Keep short. Available placeholders: hostname, sysName, sysName_fallback, ip (e.g. ":sysName")',
+        'display_title' => 'Display name for this device. Keep it short. Available placeholders: hostname, sysName, sysName_fallback, ip (for example ":sysName")',
         'display_name' => 'Display Name',
         'system_default' => 'System Default',
 
         'overwrite_ip_title' => 'Use this IP instead of resolved one for polling',
+        'no_snmp_title' => 'Without SNMP these details are not discovered, set them here',
+        'sysName' => 'sysName',
+        'hardware' => 'Hardware',
+        'os' => 'OS',
         'overwrite_ip' => 'Overwrite IP (do not use)',
 
         'description' => 'Description',
@@ -57,22 +102,20 @@ return [
         'disable_alerting' => 'Disable alerting',
 
         'ignore_alert_tag' => 'Ignore alert tag',
-        'ignore_alert_tag_title' => "Tag device to ignore alerts. Alert checks will still run.\nHowever, ignore tag can be read in alert rules.\nIf `devices.ignore = 0` or `macros.device = 1` condition is is set and ignore alert tag is on, the alert rule won't match.",
+        'ignore_alert_tag_title' => "Tag the device to ignore alerts. Alert checks still run.\nAlert rules can read the ignore tag.\nIf the ignore alert tag is on, the alert rule does not match the condition `devices.ignore = 0` or `macros.device = 1`.",
 
         'ignore_device_status' => 'Ignore Device Status',
         'ignore_device_status_title' => 'Tag device to ignore Status. It will always be shown as online.',
 
         'save' => 'Save',
 
-        'size_on_disk' => 'Size on Disk',
-        'rrd_files' => 'RRD files',
         'last_polled' => 'Last polled',
         'last_discovered' => 'Last discovered',
 
-        'rediscover_error' => 'An error occurred setting this device to be rediscovered',
+        'rediscover_error' => 'Failed to schedule this device for rediscovery',
     ],
 
     'oxidized' => [
-        'connection_error' => "We couldn't retrieve the device information from Oxidized",
+        'connection_error' => 'Could not retrieve the device information from Oxidized',
     ],
 ];

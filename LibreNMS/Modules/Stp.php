@@ -30,14 +30,16 @@ use App\Models\Device;
 use App\Models\PortStp;
 use App\Observers\ModuleModelObserver;
 use LibreNMS\DB\SyncsModels;
+use LibreNMS\Enum\PollingMethodType;
 use LibreNMS\Interfaces\Data\DataStorageInterface;
 use LibreNMS\Interfaces\Module;
 use LibreNMS\OS;
-use LibreNMS\Polling\ModuleStatus;
+use LibreNMS\Traits\RequiresPollingMethod;
 
 class Stp implements Module
 {
     use SyncsModels;
+    use RequiresPollingMethod;
 
     /**
      * @inheritDoc
@@ -47,9 +49,9 @@ class Stp implements Module
         return ['ports', 'vlans'];
     }
 
-    public function shouldDiscover(OS $os, ModuleStatus $status): bool
+    public function pollingMethods(Device $device): array
     {
-        return $status->isEnabledAndDeviceUp($os->getDevice());
+        return [PollingMethodType::Snmp];
     }
 
     public function discover(OS $os): void
@@ -65,11 +67,6 @@ class Stp implements Module
         ModuleModelObserver::observe(PortStp::class, 'Ports');
         $this->syncModels($device, 'stpPorts', $ports);
         ModuleModelObserver::done();
-    }
-
-    public function shouldPoll(OS $os, ModuleStatus $status): bool
-    {
-        return $status->isEnabledAndDeviceUp($os->getDevice());
     }
 
     public function poll(OS $os, DataStorageInterface $datastore): void

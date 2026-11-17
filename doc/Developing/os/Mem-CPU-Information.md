@@ -1,69 +1,78 @@
-This document will guide you through adding detection for Memory /
-Processor for your new device.
+# Memory and Processor Information
+
+This document describes how to add memory detection and processor
+detection for your device.
 
 #### Memory
 
-LibreNMS will attempt to detect memory statistics using the standard HOST-RESOURCES-MIB and UCD-SNMP-MIB MIBs.
-To detect non-standard MIBs, they can be defined via Yaml.
+LibreNMS tries to detect the memory statistics with the standard
+HOST-RESOURCES-MIB and UCD-SNMP-MIB MIBs.
+For a non-standard MIB, give the definition in YAML.
 
 ##### YAML
 
-In order to successfully detect memory amount and usage, two of the for keys below are required.  Some OS only
-provide a usage percentage, which will work, but a total RAM amount will not be displayed.
+The detection of the memory amount and the memory use needs two of the
+four keys below. Some operating systems supply only a use percentage.
+This value works, but LibreNMS then shows no total RAM amount.
 
 - total
 - used
 - free
 - percent_used
 
-`resources/definitions/os_discovery/mempools/arubaos.yaml`
+`resources/definitions/os_discovery/arubaos.yaml`
 
 ```yaml
-mempools:
-    data:
-        -
-            total: WLSX-SWITCH-MIB::sysXMemorySize
-            used: WLSX-SWITCH-MIB::sysXMemoryUsed
-            precision: 1024
+modules:
+    mempools:
+        data:
+            -
+                total: WLSX-SWITCH-MIB::sysXMemorySize
+                used: WLSX-SWITCH-MIB::sysXMemoryUsed
+                precision: 1024
 ```
 
-The code can also interpret table based OIDs and supports many of the same features as Health Sensors
-including {{ }} parsing, skip_values, and precache.
+The code also reads table based OIDs. It supports many features of the
+health sensors, such as `{{ }}` parsing, `skip_values`, and precache.
 
 Valid data entry keys:
 
-- `oid` oid to walk to collect processor data
-- `total` oid or integer total memory size in bytes (or precision)
-- `used` oid memory used in bytes (or precision)
-- `free` oid memory free in bytes (or precision)
-- `percent_used` oid of percentage of used memory
-- `descr` A visible description of the memory measurement defaults to "Memory"
-- `warn_percent` Usage percentage to used for alert purposes
-- `precision` precision for all byte values, typically a power of 2 (1024 for example)
-- `class`used to generate rrd filename, defaults to system.  If system, buffers, and cached exist they
-will be combined to calculate available memory.
-- `type` used to generate rrd filename, defaults to the os name
-- `index` used to generate rrd filename, defaults to the oid index
-- `skip_values` skip values see [Health Sensors](Health-Information.md) for specification
-- `snmp_flags` additional net-snmp flags
+- `oid` the OID of the walk for the processor data
+- `total` an OID or an integer with the total memory size in bytes, or
+  in the precision unit
+- `used` an OID with the used memory in bytes, or in the precision unit
+- `free` an OID with the free memory in bytes, or in the precision unit
+- `percent_used` an OID with the percentage of used memory
+- `descr` a visible description of the memory measurement. The default
+  is "Memory"
+- `warn_percent` the use percentage of the alert
+- `precision` the precision of all byte values. It is usually a power
+  of 2, such as 1024
+- `class` it builds the rrd filename. The default is `system`. If
+  `system`, `buffers`, and `cached` exist, LibreNMS combines them to
+  calculate the available memory
+- `type` it builds the rrd filename. The default is the OS name
+- `index` it builds the rrd filename. The default is the OID index
+- `skip_values` the values to skip. For the specification, read [Health
+  Sensors](Health-Information.md)
+- `snmp_flags` more net-snmp flags
 
-##### Custom Processor Discovery and Polling
+##### Custom Mempool Discovery and Polling
 
-If you need to implement custom discovery or polling you can implement
-the MempoolsDiscovery interface and the MempoolsPolling interface in the OS class.
-MempoolsPolling is optional, standard polling will be used based on OIDs stored in the database.
+For your own discovery or polling, implement the MempoolsDiscovery
+interface and override the pollMempools method in the OS class.
+Overriding pollMempools is optional. Without it, LibreNMS uses the standard
+polling with the OIDs from the database.
 
-OS Class files reside under `LibreNMS\OS`
+The OS class files are in `LibreNMS\OS`.
 
 ```php
 <?php
 
 namespace LibreNMS\OS;
 
-use LibreNMS\Interfaces\Discovery\MempoolsDiscovery;
-use LibreNMS\Interfaces\Polling\MempoolsPolling;
-
-class Example extends \LibreNMS\OS implements MempoolsDiscovery, MempoolsPolling
+use Illuminate\Database\Eloquent\Collection;
+class Example extends \LibreNMS\OS
 {
     /**
      * Discover a Collection of Mempool models.
@@ -77,10 +86,10 @@ class Example extends \LibreNMS\OS implements MempoolsDiscovery, MempoolsPolling
     }
 
     /**
-     * @param \Illuminate\Support\Collection $mempools \App\Models\Mempool
-     * @return \Illuminate\Support\Collection \App\Models\Mempool
+     * @param \Illuminate\Database\Eloquent\Collection $mempools \App\Models\Mempool
+     * @return \Illuminate\Database\Eloquent\Collection the mempools that were polled
      */
-    public function pollMempools($mempools)
+    public function pollMempools(Collection $mempools): Collection
     {
         // TODO: Implement pollMempools() method.
     }
@@ -89,49 +98,55 @@ class Example extends \LibreNMS\OS implements MempoolsDiscovery, MempoolsPolling
 
 #### Processor
 
-Detection for processors is done via a yaml file unless custom
-processing of data is required.
+A YAML file does the processor detection. Your own code is necessary
+only for a special data process.
 
 ##### YAML
 
 `resources/definitions/os_discovery/pulse.yaml`
 
 ```yaml
-mib: PULSESECURE-PSG-MIB
 modules:
     processors:
-          data:
-              -
-                  oid: iveCpuUtil
-                  num_oid: '.1.3.6.1.4.1.12532.10.{{ $index }}'
-                  type: pulse
+        data:
+            -
+                oid: PULSESECURE-PSG-MIB::iveCpuUtil
+                num_oid: '.1.3.6.1.4.1.12532.10.{{ $index }}'
+                type: pulse
 ```
 
 Available yaml data keys:
 
 Key | Default | Description
 ----- | --- | -----
-oid | required | The string based oid to fetch data, could be a table or a single value
-num_oid | optional | The numerical oid to fetch data from when polling, usually should be appended by {{ $index }}. Computed by discovery process if not provided.
-value | optional | Oid to retrieve data from, primarily used for tables
-precision | 1 | The multiplier to multiply the data by. If this is negative, the data will be multiplied then subtracted from 100.
-descr | Processor | Description of this processor, may be an oid or plain string.  Helpful values {{ $index }} and {{$count}}
-type | <os name> | Name of this sensor. This is used with the index to generate a unique id for this sensor.
-index | {{ $index }} | The index of this sensor, defaults to the index of the oid.
-skip_values | optional | Do not detect this sensor if the value matches
+oid | required | The textual OID of the data. It is a table or a single value
+num_oid | optional | The numeric OID of the polling data. It usually ends with {{ $index }}. Without this key, the discovery process calculates it
+value | optional | The OID of the data. It applies mainly to a table
+precision | 1 | The divisor of the data. With a negative value, LibreNMS divides the data and then subtracts the result from 100 (for idle values)
+descr | Processor | The description of this processor. It is an OID or a plain string. The values {{ $index }} and {{$count}} are useful
+type | <os name> | The name of this sensor. With the index, it builds a unique id for this sensor
+index | {{ $index }} | The index of this sensor. The default is the index of the OID
+skip_values | optional | It skips this sensor at a match of the value
 
 Accessing values within yaml:
 
 | | |
 | --- | --- |
-| {{ $index }} | The index after the given oid |
-| {{ $count }} | The count of entries (starting with 1) |
-| {{ $`oid` }} | Any oid in the table or pre-fetched |
+| {{ $index }} | The index after the given OID |
+| {{ $count }} | The count of the entries. It starts at 1 |
+| {{ $`oid` }} | Any OID in the table or from an earlier fetch |
 
 ##### Custom Processor Discovery and Polling
 
-If you need to implement custom discovery or polling you can implement
-the ProcessorDiscovery interface and the ProcessorPolling interface in the OS class.
+For your own discovery or polling, implement the ProcessorDiscovery
+interface and the ProcessorPolling interface in the OS class.
+ProcessorPolling is optional. Without it, LibreNMS polls the
+processor_oid from the database. Call `$this->discoverYamlProcessors()`
+from your discovery if the OS also has a processors section in its yaml.
+
+Set `processor_usage` to the raw value from the device. The Processor
+model applies `processor_precision` to it. Leave it null if the value
+is unknown. Discovery drops processors without a usage value.
 
 OS Class files reside under `LibreNMS\OS`
 
@@ -139,7 +154,8 @@ OS Class files reside under `LibreNMS\OS`
 <?php
 namespace LibreNMS\OS;
 
-use LibreNMS\Device\Processor;
+use App\Models\Processor;
+use Illuminate\Support\Collection;
 use LibreNMS\Interfaces\Discovery\ProcessorDiscovery;
 use LibreNMS\Interfaces\Polling\ProcessorPolling;
 use LibreNMS\OS;
@@ -148,24 +164,36 @@ class ExampleOS extends OS implements ProcessorDiscovery, ProcessorPolling
 {
     /**
      * Discover processors.
-     * Returns an array of LibreNMS\Device\Processor objects that have been discovered
      *
-     * @return array Processors
+     * @return Collection<int, Processor>
      */
-    public function discoverProcessors()
+    public function discoverProcessors(): Collection
     {
-        // discovery code here
+        return new Collection([
+            new Processor([
+                'processor_type' => 'example',
+                'processor_index' => 0,
+                'processor_oid' => '.1.3.6.1.4.1.1234.1.0',
+                'processor_descr' => 'Processor',
+                'processor_precision' => 1,
+                'processor_usage' => \SnmpQuery::get('EXAMPLE-MIB::cpuUsage.0')->value(),
+            ]),
+        ]);
     }
 
     /**
-     * Poll processor data.  This can be implemented if custom polling is needed.
+     * Poll processor data. Only needed if processor_oid can't be polled directly.
      *
-     * @param array $processors Array of processor entries from the database that need to be polled
-     * @return array of polled data
+     * @param  Collection<int, Processor>  $processors  processor_usage is null on each processor
+     * @return Collection<int, Processor>
      */
-    public function pollProcessors(array $processors)
+    public function pollProcessors(Collection $processors): Collection
     {
-        // polling code here
+        foreach ($processors as $processor) {
+            $processor->processor_usage = 42; // raw value, leave null on failure
+        }
+
+        return $processors;
     }
 }
 ```

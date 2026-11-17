@@ -413,9 +413,7 @@ class IRCBot
                 if ($ex[2] != '*') {
                     $this->tempnick = $ex[2];
                 }
-                if (! isset($this->tempnick)) {
-                    $this->tempnick = $this->nick . random_int(0, 99);
-                }
+                $this->tempnick ??= $this->nick . random_int(0, 99);
                 if ($this->debug) {
                     $this->log('Using temp nick ' . $this->tempnick);
                 }
@@ -650,7 +648,6 @@ class IRCBot
     private function hostAuth()
     {
         $this->log('HostAuth');
-        global $authorizer;
         foreach ($this->config['irc_auth'] as $nms_user => $hosts) {
             foreach ($hosts as $host) {
                 $host = preg_replace("/\*/", '.*', (string) $host);
@@ -684,10 +681,10 @@ class IRCBot
 
     private function _auth($params)
     {
-        global $authorizer;
         $params = explode(' ', (string) $params, 2);
         if (strlen($params[0]) == 64) {
-            if ($this->tokens[$this->getUser($this->data)] == $params[0]) {
+            $stored = $this->tokens[$this->getUser($this->data)] ?? '';
+            if (is_string($stored) && hash_equals($stored, $params[0])) {
                 $this->user['expire'] = (time() + ($this->config['irc_authtime'] * 3600));
 
                 return $this->respond('Authenticated.');
@@ -696,7 +693,7 @@ class IRCBot
             }
         } else {
             $user = User::firstWhere('username', $params[0]);
-            if ($user->email && $user->username == $params[0]) {
+            if ($user && $user->email && $user->username == $params[0]) {
                 $token = hash('gost', openssl_random_pseudo_bytes(1024));
                 $this->tokens[$this->getUser($this->data)] = $token;
                 $this->user['user'] = $user;
@@ -805,7 +802,8 @@ class IRCBot
         /** @var Eventlog $logline */
         foreach ($tmp as $logline) {
             $response = $logline->datetime . ' ';
-            $response .= $this->_color($logline->device->displayName(), null, null, 'bold') . ' ';
+            $device = $logline->device;
+            $response .= $this->_color($device->display, null, null, 'bold') . ' ';
             if ($this->config['irc_alert_utf8']) {
                 if (preg_match('/critical alert/', (string) $logline->message)) {
                     $response .= preg_replace('/critical alert/', (string) $this->_color('critical alert', 'red'), (string) $logline->message) . ' ';
@@ -847,9 +845,9 @@ class IRCBot
     private function _down($params)
     {
         $devices = Device::hasAccess($this->user['user'])->isDown()
-            ->select(['device_id', 'hostname', 'sysName', 'display', 'ip'])->get();
+            ->select(['device_id', 'display'])->get();
 
-        $msg = $devices->map->displayName()->implode(', ');
+        $msg = $devices->pluck('display')->implode(', ');
 
         return $this->respond($msg ?: 'Nothing to show :)');
     }
@@ -869,7 +867,7 @@ class IRCBot
         $status .= $device->ignore ? '*Ignored*' : '';
         $status .= $device->disabled ? '*Disabled*' : '';
 
-        return $this->respond($device->displayName() . ': ' . $device->os . ' ' . $device->version . ' ' . $device->features . ' ' . $status);
+        return $this->respond($device->display . ': ' . $device->os . ' ' . $device->version . ' ' . $device->features . ' ' . $status);
     }
 
     //end _device()
